@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import * as cheerio from 'cheerio';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SourceRegistry } from 'src/services/importer/source-registry';
@@ -37,6 +38,7 @@ describe('SourceRegistry', () => {
 
     expect(snapshot.title).toBe('守り抜いたヒロインたちが病んでいく件について');
     expect(snapshot.chapters.length).toBeGreaterThan(0);
+    expect(snapshot.chapters).toHaveLength(54);
     const firstChapter = snapshot.chapters[0];
     if (!firstChapter || !adapter.parseChapter) throw new Error('fixture chapter was not parsed');
     const body = await adapter.parseChapter(firstChapter, kakuyomuChapter);
@@ -44,6 +46,21 @@ describe('SourceRegistry', () => {
     expect(body.paragraphs.join('\n')).toContain('大切な妹を守りたかった。');
     expect(body.paragraphs.join('\n')).not.toContain('<p');
     expect(body.contentHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('fails closed when the Kakuyomu directory snapshot is incomplete', () => {
+    const source = SourceRegistry.detect('https://kakuyomu.jp/works/822139842947212336');
+    if (!source) throw new Error('fixture source was not detected');
+    const adapter = SourceRegistry.get(source.sourceKey);
+    const $ = cheerio.load(kakuyomuWork);
+    const data = JSON.parse($('script#__NEXT_DATA__').html() || '{}') as {
+      props: { pageProps: { __APOLLO_STATE__: Record<string, Record<string, unknown>> } };
+    };
+    data.props.pageProps.__APOLLO_STATE__['Work:822139842947212336']!.publicEpisodeCount = 55;
+    $('script#__NEXT_DATA__').text(JSON.stringify(data));
+    expect(() => adapter.discover(source, $.html(), '2026-08-24T00:00:00.000Z')).toThrow(
+      'Kakuyomu 目录不完整',
+    );
   });
 
   it('keeps Narou metadata-only and rejects chapter content capability', () => {
@@ -68,6 +85,6 @@ describe('SourceRegistry', () => {
 
     expect(snapshot.metadataOnly).toBe(true);
     expect(snapshot.chapters).toEqual([]);
-    expect(adapter.parseChapter).toBeUndefined();
+    expect('parseChapter' in adapter).toBe(false);
   });
 });

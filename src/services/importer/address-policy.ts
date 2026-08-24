@@ -58,27 +58,29 @@ function isPublicIpv4(octets: number[]): boolean {
   if (a === 169 && b === 254) return false;
   if (a === 172 && b >= 16 && b <= 31) return false;
   if (a === 192 && b === 0 && (c === 0 || c === 2)) return false;
+  if (a === 192 && ((b === 31 && c === 196) || (b === 52 && c === 193))) return false;
   if (a === 192 && b === 88 && c === 99) return false;
   if (a === 192 && b === 168) return false;
-  if (a === 198 && (b === 18 || b === 19 || b === 51)) return false;
-  if (a === 198 && b === 100) return false;
+  if (a === 192 && b === 175 && c === 48) return false;
+  if (a === 198 && (b === 18 || b === 19)) return false;
+  if (a === 198 && b === 51 && c === 100) return false;
   if (a === 203 && b === 0 && c === 113) return false;
   return true;
 }
 
-function isPublicIpv6(value: bigint): boolean {
-  const top16 = Number(value >> 112n);
-  const top32 = Number(value >> 96n);
-  const top96 = value >> 32n;
+function isInIpv6Range(value: bigint, prefix: bigint, bits: number): boolean {
+  const shift = BigInt(128 - bits);
+  return value >> shift === prefix >> shift;
+}
 
-  if (value === 0n || value === 1n) return false;
-  if (top96 === 0xffffn) return false; // IPv4-mapped addresses are never accepted.
-  if ((top16 & 0xfe00) === 0xfc00) return false; // Unique local fc00::/7.
-  if ((top16 & 0xffc0) === 0xfe80) return false; // Link local fe80::/10.
-  if ((top16 & 0xff00) === 0xff00) return false; // Multicast ff00::/8.
-  if (top32 === 0x0064ff9b) return false; // NAT64 well-known prefix.
-  if (top32 === 0x20010db8 || top32 === 0x20010000) return false; // Documentation / Teredo.
-  if ((top16 & 0xffff) === 0x2002) return false; // 6to4 can encode private IPv4 addresses.
+function isPublicIpv6(value: bigint): boolean {
+  // Only globally routable unicast (2000::/3) may pass. This rejects mapped,
+  // compatible, NAT64, discard-only, ULA, link-local, and multicast ranges.
+  if (value >> 125n !== 1n) return false;
+  if (isInIpv6Range(value, 0x20010000000000000000000000000000n, 23)) return false;
+  if (isInIpv6Range(value, 0x20010db8000000000000000000000000n, 32)) return false;
+  if (isInIpv6Range(value, 0x20020000000000000000000000000000n, 16)) return false;
+  if (isInIpv6Range(value, 0x3fff0000000000000000000000000000n, 20)) return false;
   return true;
 }
 

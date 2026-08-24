@@ -276,7 +276,7 @@ function createWindow() {
       ...(preloadPath ? { preload: preloadPath } : {}),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true,
     },
   });
 

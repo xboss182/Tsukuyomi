@@ -2,6 +2,7 @@ import './setup';
 import { describe, expect, it } from 'bun:test';
 import { getDB } from 'src/utils/indexed-db';
 import { ImportLibraryBackupService } from 'src/services/importer/import-library-backup-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 import type { ImportJob, ImportJobItem } from 'src/services/importer/types';
 import type { Novel } from 'src/models/novel';
 
@@ -85,7 +86,7 @@ describe('ImportLibraryBackupService', () => {
     const db = await getDB();
     await db.put('import-jobs', job);
 
-    await expect(
+    await (expect(
       ImportLibraryBackupService.restoreBackup({
         version: 1,
         exportedAt: 'not-a-date',
@@ -94,8 +95,35 @@ describe('ImportLibraryBackupService', () => {
         jobs: [],
         jobItems: [],
       }),
-    ).rejects.toThrow('导入备份格式无效');
+    ).rejects.toThrow('导入备份格式无效') as unknown as Promise<void>);
 
     expect(await db.get('import-jobs', job.id)).toEqual(job);
+  });
+
+  it('invalidates cached chapter bodies after restore', async () => {
+    const db = await getDB();
+    await db.put('chapter-contents', {
+      chapterId: 'chapter-1',
+      content: '[{"id":"old","text":"旧正文","selectedTranslationId":"","translations":[]}]',
+      lastModified: '2026-08-24T00:00:00.000Z',
+    });
+    expect((await ChapterContentService.loadChapterContent('chapter-1'))?.[0]?.text).toBe('旧正文');
+
+    await ImportLibraryBackupService.restoreBackup({
+      version: 1,
+      exportedAt: '2026-08-24T01:00:00.000Z',
+      books: [],
+      chapterContents: [
+        {
+          chapterId: 'chapter-1',
+          content: '[{"id":"new","text":"新正文","selectedTranslationId":"","translations":[]}]',
+          lastModified: '2026-08-24T01:00:00.000Z',
+        },
+      ],
+      jobs: [],
+      jobItems: [],
+    });
+
+    expect((await ChapterContentService.loadChapterContent('chapter-1'))?.[0]?.text).toBe('新正文');
   });
 });

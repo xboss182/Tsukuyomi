@@ -4,6 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
 import type { LookupFunction, Socket } from 'node:net';
 import type { ImportError, ImportErrorCode, ImportFetchRequest, ImportFetchResult } from '../src/models/importer';
+import { toError } from '../src/utils/error-message';
 import {
   isIpLiteralHost,
   isPublicIpAddress,
@@ -58,11 +59,14 @@ function parseRetryAfterMs(value: string | undefined): number | undefined {
   return Number.isNaN(at) ? undefined : Math.min(Math.max(0, at - Date.now()), 60_000);
 }
 
-function isAllowedContentType(contentType: string | undefined, expected: 'html' | 'json'): boolean {
-  const normalized = contentType?.toLowerCase() ?? '';
+export function isAllowedImportContentType(
+  contentType: string | undefined,
+  expected: 'html' | 'json',
+): boolean {
+  const mime = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
   return expected === 'html'
-    ? normalized.startsWith('text/html') || normalized.startsWith('application/xhtml+xml')
-    : normalized.startsWith('application/json') || normalized.startsWith('text/json');
+    ? mime === 'text/html' || mime === 'application/xhtml+xml'
+    : mime === 'application/json' || mime === 'text/json';
 }
 
 function isRetryableHttpStatus(status: number): boolean {
@@ -72,6 +76,11 @@ function isRetryableHttpStatus(status: number): boolean {
 function cleanUrl(url: URL): URL {
   if (url.hash) url.hash = '';
   return url;
+}
+
+function containsUserinfo(rawUrl: string): boolean {
+  const authority = rawUrl.match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i)?.[1];
+  return authority?.includes('@') === true;
 }
 
 function validateKakuyomu(url: URL, kind: ImportFetchRequest['kind']): ValidatedRequest {
@@ -134,6 +143,9 @@ export function validateImportFetchRequest(request: unknown): ValidatedRequest {
   const typedRequest = request as ImportFetchRequest;
   let url: URL;
   try {
+    if (containsUserinfo(typedRequest.url)) {
+      throw new ImportFetchPolicyError('invalid_url', '导入地址无效');
+    }
     url = cleanUrl(new URL(typedRequest.url));
   } catch {
     throw new ImportFetchPolicyError('invalid_url', '导入地址无效');
@@ -191,7 +203,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
       },
       (reason: unknown) => {
         clearTimeout(timer);
-        reject(reason);
+        reject(toError(reason, message));
       },
     );
   });
@@ -203,6 +215,32 @@ function checkPinnedSocket(socket: Socket, address: LookupAddress): void {
   if (!expected || !actual || expected !== actual || !isPublicIpAddress(socket.remoteAddress || '')) {
     throw new ImportFetchPolicyError('unsafe_address', '导入连接未连接到已验证地址');
   }
+}
+
+export function createPinnedLookup(address: LookupAddress): LookupFunction {
+  return ((_hostname, options, callback) => {
+    if (typeof options === 'object' && options !== null && 'all' in options && options.all === true) {
+      callback(null, [address]);
+      return;
+    }
+    callback(null, address.address, address.family);
+  }) as LookupFunction;
+}
+
+export function classifyImportHttpError(
+  status: number,
+  retryAfter: string | undefined,
+): ImportError {
+  const retryAfterMs = parseRetryAfterMs(retryAfter);
+  return {
+    ...error(
+      status === 429 ? 'rate_limited' : 'http_error',
+      `导入来源返回 HTTP ${status}`,
+      isRetryableHttpStatus(status),
+    ),
+    status,
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+  };
 }
 
 function requestOnce(validated: ValidatedRequest, pinned: LookupAddress): Promise<RequestOnceResult> {
@@ -240,15 +278,7 @@ function requestOnce(validated: ValidatedRequest, pinned: LookupAddress): Promis
           servername: validated.url.hostname,
           rejectUnauthorized: true,
           agent: false,
-          lookup: ((
-            _hostname: string,
-            _options: unknown,
-            callback: (
-              lookupError: NodeJS.ErrnoException | null,
-              address: string | LookupAddress[],
-              family?: number,
-            ) => void,
-          ) => callback(null, pinned.address, pinned.family)) as LookupFunction,
+          lookup: createPinnedLookup(pinned),
           headers: {
             Accept:
               validated.expectedContentType === 'json'
@@ -270,18 +300,12 @@ function requestOnce(validated: ValidatedRequest, pinned: LookupAddress): Promis
             response.resume();
             finish({
               kind: 'error',
-              error: {
-                ...error('http_error', `导入来源返回 HTTP ${status}`, isRetryableHttpStatus(status)),
-                status,
-                ...(parseRetryAfterMs(headerValue(response.headers, 'retry-after')) !== undefined
-                  ? { retryAfterMs: parseRetryAfterMs(headerValue(response.headers, 'retry-after')) }
-                  : {}),
-              },
+              error: classifyImportHttpError(status, headerValue(response.headers, 'retry-after')),
             });
             return;
           }
           const contentType = headerValue(response.headers, 'content-type');
-          if (!isAllowedContentType(contentType, validated.expectedContentType)) {
+          if (!isAllowedImportContentType(contentType, validated.expectedContentType)) {
             response.resume();
             finish({
               kind: 'error',

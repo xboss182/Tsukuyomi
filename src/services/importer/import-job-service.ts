@@ -16,7 +16,7 @@ import { ACTIVE_IMPORT_JOB_STATUSES, INTERRUPTED_IMPORT_JOB_STATUSES } from './t
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId, UniqueIdGenerator } from 'src/utils/id-generator';
 import { serializeDates } from 'src/utils/serialize-dates';
-import { SourceRegistry, asImportError } from './source-registry';
+import { SourceRegistry, StructuredImportError, asImportError } from './source-registry';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 
 const MAX_SUCCESSFUL_BODY_BYTES = 64 * 1024 * 1024;
@@ -58,13 +58,18 @@ let importClock = systemClock;
 const lastRequestStartedAt = new Map<string, number>();
 let workerRunning = false;
 let workerPromise: Promise<void> | null = null;
+let createJobTail: Promise<void> = Promise.resolve();
 
 function now(): string {
   return new Date(importClock.now()).toISOString();
 }
 
-function makeError(code: ImportError['code'], message: string, retryable = false): ImportError {
-  return { code, message, retryable };
+function makeError(
+  code: ImportError['code'],
+  message: string,
+  retryable = false,
+): StructuredImportError {
+  return new StructuredImportError({ code, message, retryable });
 }
 
 function jobId(): string {
@@ -84,15 +89,21 @@ function matchesSourceWork(source: Novel['source'] | Chapter['source'] | undefin
 }
 
 function findBookBySource(books: Novel[], identity: SourceIdentity): Novel | undefined {
-  return books.find((book) => matchesSourceWork(book.source, identity));
+  return books.find(
+    (book) =>
+      matchesSourceWork(book.source, identity) ||
+      book.webUrl?.some((url) => SourceRegistry.matchesWorkUrl(url, identity)),
+  );
 }
 
 function getChapterBySource(book: Novel, chapter: RemoteChapterStub): Chapter | undefined {
   for (const volume of book.volumes || []) {
     const found = volume.chapters?.find(
       (candidate) =>
-        matchesSourceWork(candidate.source, chapter) &&
-        candidate.source?.remoteChapterId === chapter.remoteChapterId,
+        (matchesSourceWork(candidate.source, chapter) &&
+          candidate.source?.remoteChapterId === chapter.remoteChapterId) ||
+        (typeof candidate.webUrl === 'string' &&
+          SourceRegistry.matchesChapterUrl(candidate.webUrl, chapter)),
     );
     if (found) return found;
   }
@@ -309,10 +320,6 @@ function updateItemStatus(item: ImportJobItem, status: ImportJobItem['status']):
   return { ...item, status, jobStatusKey: `${item.jobId}:${status}`, updatedAt: now() };
 }
 
-function activeJobSourceMatch(job: ImportJob, source: SourceIdentity): boolean {
-  return ACTIVE_IMPORT_JOB_STATUSES.has(job.status) && job.sourceWorkKey === getSourceWorkKey(source);
-}
-
 function notifyLibraryChanged(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('tsukuyomi-import-library-changed'));
@@ -326,10 +333,14 @@ async function waitForSourceSlot(sourceKey: string, minimumSpacingMs: number): P
   lastRequestStartedAt.set(sourceKey, importClock.now());
 }
 
-async function fetchWithRetries(request: ImportFetchRequest): Promise<ImportFetchResult> {
+async function fetchWithRetries(
+  request: ImportFetchRequest,
+  onAttempt?: (attempt: number) => Promise<void>,
+): Promise<ImportFetchResult> {
   const adapter = SourceRegistry.get(request.sourceKey);
   let lastError: ImportError = makeError('unknown', '导入请求失败');
   for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
+    await onAttempt?.(attempt);
     await waitForSourceSlot(adapter.key, adapter.minimumSpacingMs);
     const result = await fetchImportResource(request);
     if (result.ok) return result;
@@ -347,6 +358,16 @@ function scheduleNextImportJob(): void {
   workerPromise = ImportJobService.runNextImportJob().finally(() => {
     workerPromise = null;
   });
+}
+
+async function acquireCreateJobLock(): Promise<() => void> {
+  const previous = createJobTail;
+  let release!: () => void;
+  createJobTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  return release;
 }
 
 async function getItemsForJob(jobId: string): Promise<ImportJobItem[]> {
@@ -383,34 +404,53 @@ export class ImportJobService {
     }
     const source = SourceRegistry.detect(request.url);
     if (!source) throw makeError('unsupported_source', '不支持的来源 URL');
+    if (source.sourceKey === 'kakuyomu' && request.privateUseAcknowledged !== true) {
+      throw makeError('policy_disallowed', 'Kakuyomu 导入仅限已确认的个人使用');
+    }
 
-    const db = await getDB();
-    const existing = await db.getFromIndex('import-jobs', 'by-idempotencyKey', request.idempotencyKey);
-    if (existing) return existing;
+    const release = await acquireCreateJobLock();
+    try {
+      const db = await getDB();
+      const existing = await db.getFromIndex(
+        'import-jobs',
+        'by-idempotencyKey',
+        request.idempotencyKey,
+      );
+      if (existing) return existing;
 
-    const active = (await db.getAll('import-jobs')).find((job) => activeJobSourceMatch(job, source));
-    if (active) return active;
+      const active = (await db.getAllFromIndex(
+        'import-jobs',
+        'by-sourceWorkKey',
+        getSourceWorkKey(source),
+      )).find((job) => ACTIVE_IMPORT_JOB_STATUSES.has(job.status));
+      if (active) return active;
 
-    const timestamp = now();
-    const job: ImportJob = {
-      id: jobId(),
-      idempotencyKey: request.idempotencyKey,
-      mode: request.mode,
-      inputUrl: request.url,
-      sourceKey: source.sourceKey,
-      remoteWorkId: source.remoteWorkId,
-      canonicalWorkUrl: source.canonicalWorkUrl,
-      sourceWorkKey: getSourceWorkKey(source),
-      status: 'queued',
-      counts: { total: 0, completed: 0, failed: 0, cancelled: 0 },
-      bodyBytes: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      ...(request.selectedRemoteChapterIds ? { selectedRemoteChapterIds: request.selectedRemoteChapterIds } : {}),
-    };
-    await db.add('import-jobs', job);
-    scheduleNextImportJob();
-    return job;
+      const timestamp = now();
+      const job: ImportJob = {
+        id: jobId(),
+        idempotencyKey: request.idempotencyKey,
+        mode: request.mode,
+        inputUrl: request.url,
+        sourceKey: source.sourceKey,
+        remoteWorkId: source.remoteWorkId,
+        canonicalWorkUrl: source.canonicalWorkUrl,
+        sourceWorkKey: getSourceWorkKey(source),
+        status: 'queued',
+        counts: { total: 0, completed: 0, failed: 0, cancelled: 0 },
+        bodyBytes: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        ...(request.selectedRemoteChapterIds
+          ? { selectedRemoteChapterIds: request.selectedRemoteChapterIds }
+          : {}),
+        ...(request.privateUseAcknowledged ? { privateUseAcknowledged: true } : {}),
+      };
+      await db.add('import-jobs', job);
+      scheduleNextImportJob();
+      return job;
+    } finally {
+      release();
+    }
   }
 
   static async getImportJob(id: string): Promise<ImportJob | undefined> {
@@ -461,7 +501,7 @@ export class ImportJobService {
     const parent = await db.get('import-jobs', id);
     if (!parent) throw makeError('invalid_url', '导入任务不存在');
     const failed = (await getItemsForJob(id))
-      .filter((item) => item.status === 'failed')
+      .filter((item) => item.status === 'failed' && item.lastError?.retryable === true)
       .map((item) => item.remoteChapterId);
     if (failed.length === 0) throw makeError('invalid_url', '没有可重试的失败章节');
 
@@ -554,7 +594,7 @@ export class ImportJobService {
         kind: adapter.key === 'narou-metadata' ? 'metadata' : 'toc',
         url: SourceRegistry.getFetchUrl(source),
       });
-      if (!discovery.ok) throw discovery.error;
+      if (!discovery.ok) throw new StructuredImportError(discovery.error);
 
       const snapshot = adapter.discover(source, discovery.response.body, now());
       const discovered = await this.applySnapshot(initial.id, snapshot, discovery.response.byteLength);
@@ -614,6 +654,9 @@ export class ImportJobService {
       status: snapshot.metadataOnly ? 'applying' : 'fetching',
       updatedAt: checkedAt,
     };
+    if (updatedJob.bodyBytes > MAX_SUCCESSFUL_BODY_BYTES) {
+      throw makeError('job_body_limit_exceeded', '导入任务正文总量超过 64 MiB');
+    }
     if (book) {
       await tx.objectStore('books').put(serializeDates(stripBookContent(book)));
     }
@@ -683,12 +726,14 @@ export class ImportJobService {
       return;
     }
 
-    await this.updateItem(job.id, item.id, 'fetching', item.attempts + 1);
-    const response = await fetchWithRetries({
-      sourceKey: job.sourceKey,
-      kind: 'chapter',
-      url: SourceRegistry.chapterUrl(remote),
-    });
+    const response = await fetchWithRetries(
+      {
+        sourceKey: job.sourceKey,
+        kind: 'chapter',
+        url: SourceRegistry.chapterUrl(remote),
+      },
+      async (attempt) => this.updateItem(job.id, item.id, 'fetching', attempt),
+    );
     if (!response.ok) {
       await this.markItemFailed(job.id, item.id, response.error);
       return;
@@ -854,7 +899,11 @@ export class ImportJobService {
     }
     const items = await tx.objectStore('import-job-items').index('by-jobId').getAll(id);
     const finalizedItems = cancelled
-      ? items.map((item) => (item.status === 'queued' ? updateItemStatus(item, 'cancelled') : item))
+      ? items.map((item) =>
+          item.status === 'completed' || item.status === 'failed'
+            ? item
+            : updateItemStatus(item, 'cancelled'),
+        )
       : items;
     for (const item of finalizedItems) {
       if (item !== items.find((candidate) => candidate.id === item.id)) {
@@ -885,10 +934,11 @@ export class ImportJobService {
 }
 
 export function __resetImportJobServiceForTesting(): void {
-  fetchImportResource = async () => ({
-    ok: false,
-    error: { code: 'electron_unavailable', message: '导入仅在桌面版可用', retryable: false },
-  });
+  fetchImportResource = () =>
+    Promise.resolve({
+      ok: false,
+      error: { code: 'electron_unavailable', message: '导入仅在桌面版可用', retryable: false },
+    });
   importClock = systemClock;
   lastRequestStartedAt.clear();
   workerRunning = false;

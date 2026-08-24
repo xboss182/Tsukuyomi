@@ -1,3 +1,5 @@
+import type { Novel } from './novel';
+
 export type SourceKey = 'kakuyomu' | 'narou-metadata';
 
 export type ImportMode = 'preview' | 'import' | 'refresh' | 'retry_failed';
@@ -137,6 +139,7 @@ export interface ImportJob {
   completedAt?: string | undefined;
   retryOf?: string | undefined;
   selectedRemoteChapterIds?: string[] | undefined;
+  privateUseAcknowledged?: boolean | undefined;
   snapshot?: RemoteWorkSnapshot | undefined;
   cancellationRequested?: boolean | undefined;
   error?: ImportError | undefined;
@@ -174,7 +177,7 @@ export interface ImportedChapterContent {
 export interface ImportLibraryBackup {
   version: 1;
   exportedAt: string;
-  books: import('./novel').Novel[];
+  books: Novel[];
   chapterContents: ImportedChapterContent[];
   jobs: ImportJob[];
   jobItems: ImportJobItem[];
@@ -205,6 +208,8 @@ export interface CreateImportJobRequest {
   mode: 'preview' | 'import' | 'refresh';
   idempotencyKey: string;
   selectedRemoteChapterIds?: string[] | undefined;
+  /** Kakuyomu is enabled only for an acknowledged private-use import. */
+  privateUseAcknowledged?: boolean | undefined;
 }
 
 export const ACTIVE_IMPORT_JOB_STATUSES: ReadonlySet<ImportJobStatus> = new Set([

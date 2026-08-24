@@ -21,8 +21,28 @@ export interface SourceAdapter {
   parseChapter?(source: RemoteChapterStub, html: string): Promise<RemoteChapterBody>;
 }
 
-function sourceError(code: ImportError['code'], message: string, retryable = false): ImportError {
-  return { code, message, retryable };
+export class StructuredImportError extends Error implements ImportError {
+  readonly code: ImportError['code'];
+  readonly retryable: boolean;
+  readonly status?: number | undefined;
+  readonly retryAfterMs?: number | undefined;
+
+  constructor(value: ImportError) {
+    super(value.message);
+    this.name = 'StructuredImportError';
+    this.code = value.code;
+    this.retryable = value.retryable;
+    this.status = value.status;
+    this.retryAfterMs = value.retryAfterMs;
+  }
+}
+
+function sourceError(
+  code: ImportError['code'],
+  message: string,
+  retryable = false,
+): StructuredImportError {
+  return new StructuredImportError({ code, message, retryable });
 }
 
 function titleText(title: unknown): string {
@@ -135,6 +155,11 @@ function parseKakuyomuSnapshot(
   }
 
   if (volumes.length === 0 && chapters.length > 0) volumes.push(currentVolume);
+  const expectedChapterCount =
+    typeof work.publicEpisodeCount === 'number' ? work.publicEpisodeCount : undefined;
+  if (expectedChapterCount !== undefined && expectedChapterCount !== chapters.length) {
+    throw sourceError('parse_failed', 'Kakuyomu 目录不完整');
+  }
   const authorRef = work.author && typeof work.author === 'object'
     ? (work.author as { __ref?: unknown }).__ref
     : undefined;
@@ -312,6 +337,32 @@ export class SourceRegistry {
 
   static sourceChapterKey(source: RemoteChapterStub): string {
     return `${source.sourceKey}:${source.remoteWorkId}:${source.remoteChapterId}`;
+  }
+
+  static matchesWorkUrl(url: string, source: SourceIdentity): boolean {
+    const detected = this.detect(url);
+    return (
+      detected?.sourceKey === source.sourceKey && detected.remoteWorkId === source.remoteWorkId
+    );
+  }
+
+  static matchesChapterUrl(url: string, source: RemoteChapterStub): boolean {
+    if (source.sourceKey !== 'kakuyomu') return false;
+    try {
+      const input = new URL(url);
+      if (
+        input.protocol !== 'https:' ||
+        input.hostname !== 'kakuyomu.jp' ||
+        input.username ||
+        input.password
+      ) {
+        return false;
+      }
+      const match = input.pathname.match(/^\/works\/(\d+)\/episodes\/([^/]+)\/?$/);
+      return match?.[1] === source.remoteWorkId && match[2] === source.remoteChapterId;
+    } catch {
+      return false;
+    }
   }
 
   static chapterUrl(source: RemoteChapterStub): string {
