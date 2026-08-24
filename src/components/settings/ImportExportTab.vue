@@ -9,6 +9,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
+import { ImportLibraryBackupService } from 'src/services/importer/import-library-backup-service';
 import type { ImportResult } from 'src/models/settings';
 
 type ImportedSettings = NonNullable<ImportResult['data']>;
@@ -32,6 +33,7 @@ const exportSettings = async () => {
   const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
     booksStore.books,
   );
+  const importLibrary = await ImportLibraryBackupService.createBackup();
 
   // 同步最新的 AI 模型、书籍数据、封面历史、Memory、同步设置和应用设置
   const settings = {
@@ -41,6 +43,7 @@ const exportSettings = async () => {
     coverHistory: [...coverHistoryStore.covers],
     memories,
     appSettings: settingsStore.getAllSettings(),
+    importLibrary,
   };
 
   const result = SettingsService.exportSettings(settings);
@@ -74,11 +77,17 @@ const applyCoverHistory = async (covers: ImportedSettings['coverHistory']) => {
 // 字段在快照里就替换（即便是空数组），与 UI "覆盖" 文案保持一致；
 // 只有 undefined（快照里根本没有该字段）时才跳过，避免无意义地抹掉本地数据。
 const applyImportedData = async (data: ImportedSettings) => {
+  const hasImportLibrary = data.importLibrary !== undefined;
+  if (hasImportLibrary) {
+    await ImportLibraryBackupService.restoreBackup(data.importLibrary);
+    await booksStore.refreshBooks();
+  }
+
   if (data.models !== undefined) {
     await aiModelsStore.bulkImportModels(data.models);
   }
 
-  if (data.novels !== undefined) {
+  if (!hasImportLibrary && data.novels !== undefined) {
     await booksStore.clearBooks();
     await booksStore.bulkAddBooks(data.novels);
   }

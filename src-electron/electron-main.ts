@@ -8,6 +8,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
+import { performImportFetch } from './import-fetch';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
@@ -659,6 +660,9 @@ async function performElectronFetch(
 ipcMain.handle('electron-fetch', (_event, url: string, options?: ElectronFetchOptions) =>
   performElectronFetch(url, options),
 );
+
+// Strict source-owned import fetch; it never reuses the generic Puppeteer path.
+ipcMain.handle('import-fetch', (_event, request: unknown) => performImportFetch(request));
 
 // IPC handler for saving exported settings
 ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {

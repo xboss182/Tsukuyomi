@@ -178,6 +178,17 @@ export const useBooksStore = defineStore('books', {
       }
     },
 
+    /** 供本地导入恢复和导入任务原子提交后刷新内存书架。 */
+    async refreshBooks(): Promise<void> {
+      this.isLoading = true;
+      try {
+        this.books = await BookService.getAllBooks();
+        this.isLoaded = true;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
     /**
      * 添加新书籍
      */

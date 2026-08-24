@@ -7,6 +7,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 // 暴露安全的 API 到渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  importFetch: async (request: unknown) => {
+    return await ipcRenderer.invoke('import-fetch', request);
+  },
+
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求
    * 避免浏览器的 CORS 限制

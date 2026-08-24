@@ -7,6 +7,7 @@ import type { SyncConfig } from 'src/models/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
+import type { ImportJob, ImportJobItem } from 'src/models/importer';
 
 /**
  * 书籍详情页面 UI 状态
@@ -117,13 +118,32 @@ interface TsukuyomiDB extends DBSchema {
       'by-bookId': string;
     };
   };
+  'import-jobs': {
+    key: string;
+    value: ImportJob;
+    indexes: {
+      'by-idempotencyKey': string;
+      'by-sourceWorkKey': string;
+      'by-status': string;
+      'by-createdAt': string;
+    };
+  };
+  'import-job-items': {
+    key: string;
+    value: ImportJobItem;
+    indexes: {
+      'by-jobStatusKey': string;
+      'by-sourceChapterKey': string;
+      'by-jobId': string;
+    };
+  };
 }
 
 const DB_NAME = 'tsukuyomi';
 // v11 在 chapter-embeddings 上新增 `kind: 'content' | 'title'` 字段并改为复合 key
 // `${chapterId}:${kind}:${chunkIndex}`,以支持章节标题专属语义 chunk;旧 v10 记录在 upgrade
 // 中回填 `kind: 'content'` 并按新 key 重写。
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -206,6 +226,19 @@ function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
     const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
     chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
     chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
+  }
+  if (!db.objectStoreNames.contains('import-jobs')) {
+    const importJobsStore = db.createObjectStore('import-jobs', { keyPath: 'id' });
+    importJobsStore.createIndex('by-idempotencyKey', 'idempotencyKey', { unique: true });
+    importJobsStore.createIndex('by-sourceWorkKey', 'sourceWorkKey', { unique: false });
+    importJobsStore.createIndex('by-status', 'status', { unique: false });
+    importJobsStore.createIndex('by-createdAt', 'createdAt', { unique: false });
+  }
+  if (!db.objectStoreNames.contains('import-job-items')) {
+    const importJobItemsStore = db.createObjectStore('import-job-items', { keyPath: 'id' });
+    importJobItemsStore.createIndex('by-jobStatusKey', 'jobStatusKey', { unique: false });
+    importJobItemsStore.createIndex('by-sourceChapterKey', 'sourceChapterKey', { unique: false });
+    importJobItemsStore.createIndex('by-jobId', 'jobId', { unique: false });
   }
 }
 
@@ -510,6 +543,8 @@ async function clearAllData(): Promise<void> {
     'memories',
     'full-text-indexes',
     'chapter-embeddings',
+    'import-jobs',
+    'import-job-items',
   ] as const;
 
   for (const storeName of storeNames) {

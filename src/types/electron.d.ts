@@ -2,8 +2,12 @@
  * Electron API 类型声明
  * 通过 preload 脚本暴露给渲染进程的 API
  */
+import type { ImportFetchRequest, ImportFetchResult } from 'src/models/importer';
 
 export interface ElectronAPI {
+  /** 受来源策略约束的导入请求，不是通用 HTTP 代理。 */
+  importFetch: (request: ImportFetchRequest) => Promise<ImportFetchResult>;
+
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求
    * 避免浏览器的 CORS 限制

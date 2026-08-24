@@ -1,0 +1,30 @@
+export type {
+  CreateImportJobRequest,
+  ImportError,
+  ImportErrorCode,
+  ImportFetchKind,
+  ImportFetchRequest,
+  ImportFetchResponse,
+  ImportFetchResult,
+  ImportJob,
+  ImportJobCounts,
+  ImportJobItem,
+  ImportJobItemStatus,
+  ImportJobStatus,
+  ImportMode,
+  RemoteChapterBody,
+  RemoteChapterStub,
+  RemoteVolume,
+  RemoteWorkSnapshot,
+  SourceChapterMetadata,
+  SourceIdentity,
+  SourceKey,
+  SourceVolumeMetadata,
+  SourceWorkMetadata,
+} from 'src/models/importer';
+
+export {
+  ACTIVE_IMPORT_JOB_STATUSES,
+  INTERRUPTED_IMPORT_JOB_STATUSES,
+  isTerminalImportJobStatus,
+} from 'src/models/importer';

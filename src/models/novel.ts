@@ -1,4 +1,9 @@
 import type { AIModel } from '../services/ai/types/ai-model';
+import type {
+  SourceChapterMetadata,
+  SourceVolumeMetadata,
+  SourceWorkMetadata,
+} from './importer';
 
 // 小说
 export interface Novel {
@@ -11,6 +16,8 @@ export interface Novel {
   tags?: string[] | undefined;
   volumes?: Volume[] | undefined;
   webUrl?: string[] | undefined;
+  /** 受控导入来源的稳定身份；手工书籍保持 undefined。 */
+  source?: SourceWorkMetadata | undefined;
   starred?: boolean | undefined;
   lastEdited: Date;
   createdAt: Date;
@@ -117,6 +124,8 @@ export interface Volume {
   description?: string | undefined;
   cover?: CoverImage | undefined;
   chapters?: Chapter[] | undefined;
+  /** 远程目录卷身份，用于重命名或重排后稳定合并。 */
+  source?: SourceVolumeMetadata | undefined;
 }
 
 export interface Chapter {
@@ -128,6 +137,8 @@ export interface Chapter {
         translation: Translation;
       };
   webUrl?: string | undefined; // 网络地址
+  /** 远程章节身份与内容哈希；不以标题或原始 URL 做去重。 */
+  source?: SourceChapterMetadata | undefined;
 
   /**
    * 章节内容（懒加载）

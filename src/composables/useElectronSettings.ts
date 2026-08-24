@@ -7,6 +7,7 @@ import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
+import { ImportLibraryBackupService } from 'src/services/importer/import-library-backup-service';
 import { isElectron } from 'src/utils/platform';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
@@ -43,6 +44,7 @@ export function useElectronSettings() {
       const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
         booksStore.books,
       );
+      const importLibrary = await ImportLibraryBackupService.createBackup();
 
       // 获取当前设置
       const settings = {
@@ -52,6 +54,7 @@ export function useElectronSettings() {
         memories,
         sync: settingsStore.syncs,
         appSettings: settingsStore.settings,
+        importLibrary,
       };
 
       // 转换为 JSON 字符串
@@ -106,8 +109,13 @@ export function useElectronSettings() {
         return;
       }
       const data = result.data;
+      const hasImportLibrary = data.importLibrary !== undefined;
+      if (hasImportLibrary) {
+        await ImportLibraryBackupService.restoreBackup(data.importLibrary);
+        await booksStore.refreshBooks();
+      }
       await importAiModels(data.models);
-      await importNovels(data.novels);
+      if (!hasImportLibrary) await importNovels(data.novels);
       await importCoverHistory(data.coverHistory);
       await importMemories(data.memories);
       if (data.appSettings) await settingsStore.importSettings(data.appSettings);
