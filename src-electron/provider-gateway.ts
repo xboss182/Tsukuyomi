@@ -6,6 +6,7 @@ import type {
   ImportFetchRequest,
   ImportFetchResponse,
   ImportFetchResult,
+  SourceKey,
 } from '../src/models/importer';
 import { validateImportFetchRequest } from './import-fetch';
 import type {
@@ -358,6 +359,14 @@ function eligibleForFallback(result: ImportFetchResult): boolean {
   );
 }
 
+function providerRouteForSource(sourceKey: SourceKey): ImportFetchProvider[] {
+  if (sourceKey === 'freewebnovel') return ['scrape-do', 'scrapingant', 'zenrows', 'zyte'];
+  if (sourceKey === 'nobadnovel' || sourceKey === 'novellunar') {
+    return ['direct', 'scrape-do', 'scrapingant', 'zenrows', 'zyte'];
+  }
+  return ['direct'];
+}
+
 export class PrivateScraperGateway {
   private readonly now: () => number;
   private readonly runtime = new Map<string, KeyRuntime>();
@@ -407,12 +416,7 @@ export class PrivateScraperGateway {
     } catch {
       return { ok: false, error: error('invalid_url', '导入请求无效') };
     }
-    const managed = request.sourceKey === 'freewebnovel';
-    const route: ImportFetchProvider[] = managed
-      ? ['scrape-do', 'scrapingant', 'zenrows', 'zyte']
-      : request.sourceKey === 'nobadnovel' || request.sourceKey === 'novellunar'
-        ? ['direct', 'scrape-do', 'scrapingant', 'zenrows', 'zyte']
-        : ['direct'];
+    const route = providerRouteForSource(request.sourceKey);
     let attempts = 0;
     let last: ImportFetchResult = {
       ok: false,
@@ -422,69 +426,69 @@ export class PrivateScraperGateway {
     for (const provider of route) {
       while (attempts < MAX_ATTEMPTS) {
         attempts += 1;
-        if (provider === 'direct') {
-          const result = await this.options.directFetch(request);
-          last = { ...result, provider: 'direct', attempts };
-          if (result.ok) return { ...this.validateFinal(request, result.response), provider: 'direct', attempts };
-          break;
-        }
-        const driver = this.options.drivers.find((candidate) => candidate.provider === provider);
-        if (!driver) break;
-        const credential = await this.select(provider);
-        if (!credential) {
-          attempts -= 1;
-          break;
-        }
-        const paidCost = credential.paidPlan ? driver.maxCostMicros : 0;
-        const used = request.providerCostMicrosUsed ?? 0;
-        const ceiling = request.maxProviderCostMicros ?? 0;
-        if (paidCost > 0 && (ceiling <= 0 || used + paidCost > ceiling)) {
-          last = { ok: false, provider, error: error('budget_exceeded', '抓取服务商费用上限已达到') };
-          break;
-        }
-        const state = this.state(credential.id);
-        state.inFlight += 1;
-        let result: ImportFetchResult;
-        try {
-          result = await driver.fetch({
-            credential,
-            targetUrl: request.url,
-            mode: 'browser',
-            ...limits,
-          });
-        } catch {
-          result = { ok: false, provider, error: error('provider_error', '抓取服务商请求失败', true) };
-        } finally {
-          state.inFlight -= 1;
-        }
-        if (paidCost > 0) await this.options.credentials.recordCost(credential.id, paidCost);
-        last = { ...result, provider, attempts, costMicros: paidCost };
-        if (result.ok) {
-          state.failureStreak = 0;
-          const validated = this.validateFinal(request, result.response);
-          return { ...validated, provider, attempts, costMicros: paidCost };
-        }
-        if (result.error.code === 'provider_unavailable' && [401, 402, 403].includes(result.error.status ?? 0)) {
-          await this.options.credentials.disable(credential.id);
-          continue;
-        }
-        if (result.error.code === 'rate_limited') {
-          state.cooldownUntil = this.now() + (result.error.retryAfterMs ?? DEFAULT_COOLDOWN_MS);
-          continue;
-        }
-        if (result.error.retryable) {
-          state.failureStreak += 1;
-          if (state.failureStreak >= 3) state.cooldownUntil = this.now() + CIRCUIT_COOLDOWN_MS;
-        }
-        if (eligibleForFallback(result)) break;
-        return last;
+        const outcome = await this.attemptProvider(provider, request, limits);
+        last = { ...outcome, attempts };
+        if (outcome.ok) return { ...outcome, attempts };
+        if (outcome.stopRoute) break;
       }
       if (attempts >= MAX_ATTEMPTS) break;
       if (!eligibleForFallback(last)) return { ...last, attempts };
     }
     return { ...last, attempts };
   }
-}
+
+  private async attemptProvider(
+    provider: ImportFetchProvider,
+    request: ImportFetchRequest,
+    limits: { timeoutMs: number; maxBytes: number },
+  ): Promise<ImportFetchResult & { stopRoute?: boolean }> {
+    if (provider === 'direct') {
+      const result = await this.options.directFetch(request);
+      if (result.ok) return { ...this.validateFinal(request, result.response), provider: 'direct' };
+      return { ...result, provider: 'direct', stopRoute: true };
+    }
+
+    const driver = this.options.drivers.find((candidate) => candidate.provider === provider);
+    if (!driver) return { ok: false, error: error('provider_unavailable', `${provider} 未安装`), stopRoute: true };
+    const credential = await this.select(provider);
+    if (!credential) return { ok: false, error: error('provider_unavailable', `${provider} 未配置凭据`), stopRoute: true };
+
+    const paidCost = credential.paidPlan ? driver.maxCostMicros : 0;
+    const used = request.providerCostMicrosUsed ?? 0;
+    const ceiling = request.maxProviderCostMicros ?? 0;
+    if (paidCost > 0 && (ceiling <= 0 || used + paidCost > ceiling)) {
+      return { ok: false, provider, error: error('budget_exceeded', '抓取服务商费用上限已达到'), stopRoute: true };
+    }
+
+    const state = this.state(credential.id);
+    state.inFlight += 1;
+    let result: ImportFetchResult;
+    try {
+      result = await driver.fetch({ credential, targetUrl: request.url, mode: 'browser', ...limits });
+    } catch {
+      result = { ok: false, provider, error: error('provider_error', '抓取服务商请求失败', true) };
+    } finally {
+      state.inFlight -= 1;
+    }
+    if (paidCost > 0) await this.options.credentials.recordCost(credential.id, paidCost);
+    if (result.ok) {
+      state.failureStreak = 0;
+      return { ...this.validateFinal(request, result.response), provider, costMicros: paidCost };
+    }
+    if (result.error.code === 'provider_unavailable' && [401, 402, 403].includes(result.error.status ?? 0)) {
+      await this.options.credentials.disable(credential.id);
+      return { ...result, provider, stopRoute: false };
+    }
+    if (result.error.code === 'rate_limited') {
+      state.cooldownUntil = this.now() + (result.error.retryAfterMs ?? DEFAULT_COOLDOWN_MS);
+      return { ...result, provider, stopRoute: false };
+    }
+    if (result.error.retryable) {
+      state.failureStreak += 1;
+      if (state.failureStreak >= 3) state.cooldownUntil = this.now() + CIRCUIT_COOLDOWN_MS;
+    }
+    return { ...result, provider, costMicros: paidCost, stopRoute: eligibleForFallback(result) };
+  }}
 
 export function performProviderHttpRequest(request: ProviderHttpRequest): Promise<ProviderHttpResponse> {
   return new Promise((resolve, reject) => {

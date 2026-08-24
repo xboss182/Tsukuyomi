@@ -10,7 +10,7 @@
 import { beforeEach } from 'bun:test';
 import 'fake-indexeddb/auto';
 import { IDBKeyRange, IDBRequest } from 'fake-indexeddb';
-import { resetDbForTests } from 'src/utils/indexed-db';
+import { resetDbForTests, __resetDbPromiseForTesting } from 'src/utils/indexed-db';
 
 if (typeof globalThis.IDBKeyRange === 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +24,7 @@ if (typeof (globalThis as any).IDBRequest === 'undefined') {
 }
 
 beforeEach(async () => {
+  await __resetDbPromiseForTesting();
   await resetDbForTests();
 });
 

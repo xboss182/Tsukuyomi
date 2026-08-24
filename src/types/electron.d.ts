@@ -42,6 +42,20 @@ export interface ElectronAPI {
   };
 
   /**
+   * 提供商凭据管理
+   */
+  providerCredentials: {
+    list: () => Promise<{ ok: true; credentials: unknown[] } | { ok: false; error: string }>;
+    upsert: (input: unknown) => Promise<{ ok: true; summary: unknown } | { ok: false; error: string }>;
+    remove: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  };
+
+  /**
+   * 提供商路由的受约束导入请求
+   */
+  providerImportFetch: (request: ImportFetchRequest) => Promise<ImportFetchResult>;
+
+  /**
    * 设置相关的 IPC 通信
    */
   settings: {

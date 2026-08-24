@@ -33,7 +33,7 @@ const systemClock: ImportClock = {
   sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 };
 
-let fetchImportResource: ImportFetch = async (request) => {
+async function performRendererFetch(request: ImportFetchRequest): Promise<ImportFetchResult> {
   if (typeof window === 'undefined' || !window.electronAPI?.importFetch) {
     return {
       ok: false,
@@ -44,15 +44,24 @@ let fetchImportResource: ImportFetch = async (request) => {
       },
     };
   }
+  const needsProvider =
+    request.sourceKey === 'freewebnovel' ||
+    (request.maxProviderCostMicros !== undefined && request.maxProviderCostMicros > 0);
+  const channel =
+    needsProvider && window.electronAPI.providerImportFetch
+      ? window.electronAPI.providerImportFetch
+      : window.electronAPI.importFetch;
   try {
-    return await window.electronAPI.importFetch(request);
+    return await channel(request);
   } catch {
     return {
       ok: false,
       error: { code: 'network_error', message: '导入请求失败', retryable: true },
     };
   }
-};
+}
+
+let fetchImportResource: ImportFetch = (request) => performRendererFetch(request);
 
 let importClock = systemClock;
 const lastRequestStartedAt = new Map<string, number>();
@@ -338,11 +347,18 @@ async function fetchWithRetries(
   onAttempt?: (attempt: number) => Promise<void>,
 ): Promise<ImportFetchResult> {
   const adapter = SourceRegistry.get(request.sourceKey);
+  const budget = request.maxProviderCostMicros ?? 0;
+  const used = request.providerCostMicrosUsed ?? 0;
   let lastError: ImportError = makeError('unknown', '导入请求失败');
   for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
     await onAttempt?.(attempt);
     await waitForSourceSlot(adapter.key, adapter.minimumSpacingMs);
-    const result = await fetchImportResource(request);
+    const budgetedRequest: ImportFetchRequest = {
+      ...request,
+      maxProviderCostMicros: budget,
+      providerCostMicrosUsed: used,
+    };
+    const result = await fetchImportResource(budgetedRequest);
     if (result.ok) return result;
     lastError = result.error;
     if (!lastError.retryable || attempt === MAX_FETCH_ATTEMPTS) break;
@@ -382,19 +398,7 @@ export class ImportJobService {
   }
 
   static setFetchForTesting(fetcher: ImportFetch | null): void {
-    fetchImportResource = fetcher ?? (async (request) => {
-      if (typeof window === 'undefined' || !window.electronAPI?.importFetch) {
-        return {
-          ok: false,
-          error: {
-            code: 'electron_unavailable',
-            message: '导入仅在桌面版可用',
-            retryable: false,
-          },
-        };
-      }
-      return window.electronAPI.importFetch(request);
-    });
+    fetchImportResource = fetcher ?? ((request) => performRendererFetch(request));
     lastRequestStartedAt.clear();
   }
 
@@ -444,6 +448,9 @@ export class ImportJobService {
           ? { selectedRemoteChapterIds: request.selectedRemoteChapterIds }
           : {}),
         ...(request.privateUseAcknowledged ? { privateUseAcknowledged: true } : {}),
+        ...(request.maxProviderCostMicros !== undefined
+          ? { maxProviderCostMicros: request.maxProviderCostMicros }
+          : {}),
       };
       await db.add('import-jobs', job);
       scheduleNextImportJob();
@@ -521,6 +528,8 @@ export class ImportJobService {
       cancellationRequested: false,
       completedAt: undefined,
       error: undefined,
+      maxProviderCostMicros: parent.maxProviderCostMicros,
+      providerCostMicrosUsed: parent.providerCostMicrosUsed,
     };
     await db.add('import-jobs', job);
     scheduleNextImportJob();
@@ -593,11 +602,14 @@ export class ImportJobService {
         sourceKey: source.sourceKey,
         kind: adapter.key === 'narou-metadata' ? 'metadata' : 'toc',
         url: SourceRegistry.getFetchUrl(source),
+        jobId: initial.id,
+        maxProviderCostMicros: initial.maxProviderCostMicros,
+        providerCostMicrosUsed: initial.providerCostMicrosUsed,
       });
       if (!discovery.ok) throw new StructuredImportError(discovery.error);
 
       const snapshot = adapter.discover(source, discovery.response.body, now());
-      const discovered = await this.applySnapshot(initial.id, snapshot, discovery.response.byteLength);
+      const discovered = await this.applySnapshot(initial.id, snapshot, discovery.response.byteLength, discovery as ImportFetchResult & { ok: true });
       if (discovered.cancellationRequested) {
         await this.finalizeJob(initial.id, true);
         return;
@@ -635,6 +647,7 @@ export class ImportJobService {
     jobIdValue: string,
     snapshot: RemoteWorkSnapshot,
     bodyBytes: number,
+    discovery: ImportFetchResult & { ok: true },
   ): Promise<ImportJob> {
     const db = await getDB();
     const tx = db.transaction(['books', 'chapter-contents', 'import-jobs', 'import-job-items'], 'readwrite');
@@ -646,11 +659,13 @@ export class ImportJobService {
       job.mode === 'preview'
         ? undefined
         : upsertBookSource(findBookBySource(books, snapshot.source), snapshot, checkedAt);
+    const costUsed = (job.providerCostMicrosUsed ?? 0) + (discovery.costMicros ?? 0);
     const updatedJob: ImportJob = {
       ...job,
       ...(book ? { novelId: book.id } : {}),
       snapshot,
       bodyBytes: job.bodyBytes + bodyBytes,
+      providerCostMicrosUsed: costUsed,
       status: snapshot.metadataOnly ? 'applying' : 'fetching',
       updatedAt: checkedAt,
     };
@@ -731,6 +746,9 @@ export class ImportJobService {
         sourceKey: job.sourceKey,
         kind: 'chapter',
         url: SourceRegistry.chapterUrl(remote),
+        jobId: job.id,
+        maxProviderCostMicros: job.maxProviderCostMicros,
+        providerCostMicrosUsed: job.providerCostMicrosUsed,
       },
       async (attempt) => this.updateItem(job.id, item.id, 'fetching', attempt),
     );
@@ -752,7 +770,7 @@ export class ImportJobService {
 
     try {
       const body = await adapter.parseChapter(remote, response.response.body);
-      await this.applyChapter(job.id, item.id, remote, body, response.response.byteLength);
+      await this.applyChapter(job.id, item.id, remote, body, response.response.byteLength, response.costMicros);
     } catch (error) {
       await this.markItemFailed(job.id, item.id, asImportError(error));
     }
@@ -764,6 +782,7 @@ export class ImportJobService {
     remote: RemoteChapterStub,
     body: RemoteChapterBody,
     bodyBytes: number,
+    costMicros?: number,
   ): Promise<void> {
     const db = await getDB();
     const tx = db.transaction(['books', 'chapter-contents', 'import-jobs', 'import-job-items'], 'readwrite');
@@ -813,6 +832,7 @@ export class ImportJobService {
       ...job,
       status: 'applying',
       bodyBytes: job.bodyBytes + bodyBytes,
+      providerCostMicrosUsed: (job.providerCostMicrosUsed ?? 0) + (costMicros ?? 0),
       counts: { ...job.counts, completed: job.counts.completed + 1 },
       updatedAt: fetchedAt,
     };
@@ -934,11 +954,7 @@ export class ImportJobService {
 }
 
 export function __resetImportJobServiceForTesting(): void {
-  fetchImportResource = () =>
-    Promise.resolve({
-      ok: false,
-      error: { code: 'electron_unavailable', message: '导入仅在桌面版可用', retryable: false },
-    });
+  fetchImportResource = (request) => performRendererFetch(request);
   importClock = systemClock;
   lastRequestStartedAt.clear();
   workerRunning = false;

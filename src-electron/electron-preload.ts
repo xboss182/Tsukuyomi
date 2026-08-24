@@ -42,6 +42,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * 提供商凭据管理（安全存储在 Electron main 进程）
+   */
+  providerCredentials: {
+    list: () => ipcRenderer.invoke('provider-credentials:list'),
+    upsert: (input: unknown) => ipcRenderer.invoke('provider-credentials:upsert', input),
+    remove: (id: string) => ipcRenderer.invoke('provider-credentials:remove', id),
+  },
+
+  /**
+   * 提供商路由的受约束导入请求
+   */
+  providerImportFetch: (request: unknown) => ipcRenderer.invoke('provider-import-fetch', request),
+
+  /**
    * 设置相关的 IPC 通信
    */
   settings: {

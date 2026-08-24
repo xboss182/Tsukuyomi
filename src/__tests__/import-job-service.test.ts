@@ -372,7 +372,32 @@ describe('ImportJobService', () => {
     expect((await ImportJobService.listImportJobItems(job.id))[0]?.status).toBe('cancelled');
   });
 
-  it('requeues interrupted jobs at startup', async () => {
+  it('passes jobId and provider cost budget through fetch requests', async () => {
+    const requests: Array<ImportFetchRequest & { jobId?: string | undefined; maxProviderCostMicros?: number | undefined; providerCostMicrosUsed?: number | undefined }> = [];
+    ImportJobService.setFetchForTesting((request) => {
+      requests.push(request);
+      return Promise.resolve(response(request));
+    });
+
+    const job = await ImportJobService.createImportJob({
+      url: workUrl,
+      mode: 'import',
+      idempotencyKey: 'budget-pass-through',
+      privateUseAcknowledged: true,
+      maxProviderCostMicros: 1_000,
+    });
+    await ImportJobService.waitForIdleForTesting();
+
+    expect((await ImportJobService.getImportJob(job.id))?.providerCostMicrosUsed).toBe(0);
+    expect(requests.length).toBeGreaterThanOrEqual(1);
+    for (const request of requests) {
+      expect(request.jobId).toBe(job.id);
+      expect(request.maxProviderCostMicros).toBe(1_000);
+      expect(request.providerCostMicrosUsed).toBe(0);
+    }
+  });
+
+    it('requeues interrupted jobs at startup', async () => {
     const db = await getDB();
     await db.put('import-jobs', {
       id: 'interrupted',

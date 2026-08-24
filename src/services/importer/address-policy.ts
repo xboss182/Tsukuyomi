@@ -51,21 +51,36 @@ export function normalizeIpAddress(address: string): string | null {
   return ipv6 === null ? null : `v6:${ipv6.toString(16).padStart(32, '0')}`;
 }
 
+interface Ipv4Range { first: number; second?: number; secondMin?: number; secondMax?: number; third?: number; }
+const PRIVATE_IPV4_RANGES: Ipv4Range[] = [
+  { first: 0 }, { first: 10 }, { first: 127 }, { first: 224 },
+  { first: 100, secondMin: 64, secondMax: 127 },
+  { first: 169, second: 254 },
+  { first: 172, secondMin: 16, secondMax: 31 },
+  { first: 192, second: 0, third: 0 },
+  { first: 192, second: 0, third: 2 },
+  { first: 192, second: 31, third: 196 },
+  { first: 192, second: 52, third: 193 },
+  { first: 192, second: 88, third: 99 },
+  { first: 192, second: 168 },
+  { first: 192, second: 175, third: 48 },
+  { first: 198, second: 18 },
+  { first: 198, second: 19 },
+  { first: 198, second: 51, third: 100 },
+  { first: 203, second: 0, third: 113 },
+];
+
+function matchesIpv4Range(a: number, b: number, c: number, range: Ipv4Range): boolean {
+  if (a !== range.first) return false;
+  if (range.second !== undefined && b !== range.second) return false;
+  if (range.secondMin !== undefined && (b < range.secondMin || b > (range.secondMax ?? range.secondMin))) return false;
+  if (range.third !== undefined && c !== range.third) return false;
+  return true;
+}
+
 function isPublicIpv4(octets: number[]): boolean {
   const [a = 0, b = 0, c = 0] = octets;
-  if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
-  if (a === 100 && b >= 64 && b <= 127) return false;
-  if (a === 169 && b === 254) return false;
-  if (a === 172 && b >= 16 && b <= 31) return false;
-  if (a === 192 && b === 0 && (c === 0 || c === 2)) return false;
-  if (a === 192 && ((b === 31 && c === 196) || (b === 52 && c === 193))) return false;
-  if (a === 192 && b === 88 && c === 99) return false;
-  if (a === 192 && b === 168) return false;
-  if (a === 192 && b === 175 && c === 48) return false;
-  if (a === 198 && (b === 18 || b === 19)) return false;
-  if (a === 198 && b === 51 && c === 100) return false;
-  if (a === 203 && b === 0 && c === 113) return false;
-  return true;
+  return !PRIVATE_IPV4_RANGES.some((range) => matchesIpv4Range(a, b, c, range));
 }
 
 function isInIpv6Range(value: bigint, prefix: bigint, bits: number): boolean {

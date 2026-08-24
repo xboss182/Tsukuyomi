@@ -84,15 +84,15 @@ describe('ProviderCredentialVault', () => {
     expect(store.list()[0]).not.toHaveProperty('secret');
     expect((await store.usable('scrape-do'))[0]?.secret).toBe('plaintext-token');
 
-    expect(() =>
-      store.upsert({
-        provider: 'zyte',
-        label: 'unapproved',
-        secret: 'nope',
-        authorizedForUse: false,
-        maxConcurrency: 1,
-      }),
-    ).toThrow('授权');
+    const upsertPromise = store.upsert({
+      provider: 'zyte',
+      label: 'unapproved',
+      secret: 'nope',
+      authorizedForUse: false,
+      maxConcurrency: 1,
+    });
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(upsertPromise).rejects.toThrow('授权');
   });
 });
 

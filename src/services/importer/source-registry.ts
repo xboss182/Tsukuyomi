@@ -136,11 +136,43 @@ function recordAt(value: unknown, key: string): Record<string, unknown> | null {
   return item && typeof item === 'object' ? (item as Record<string, unknown>) : null;
 }
 
-function parseKakuyomuSnapshot(
+function kakuyomuEpisodeFromRef(
+  apollo: Record<string, unknown>,
+  source: SourceIdentity,
+  currentVolume: RemoteVolume,
+  episodeRef: unknown,
+  sequence: number,
+): RemoteChapterStub | null {
+  const refValue = episodeRef && typeof episodeRef === 'object'
+    ? (episodeRef as { __ref?: unknown }).__ref
+    : episodeRef;
+  if (typeof refValue !== 'string') return null;
+  const episode = recordAt(apollo, refValue);
+  const remoteChapterId = typeof episode?.id === 'string' ? episode.id : '';
+  const chapterTitle = typeof episode?.title === 'string' ? episode.title.trim() : '';
+  if (!remoteChapterId || !chapterTitle) return null;
+  const canonicalChapterUrl = `${source.canonicalWorkUrl}/episodes/${remoteChapterId}`;
+  return {
+    ...source,
+    remoteChapterId,
+    canonicalChapterUrl,
+    title: chapterTitle,
+    volume: currentVolume,
+    sequence,
+    publishedAt: parseOptionalDate(episode?.publishedAt),
+    remoteUpdatedAt: parseOptionalDate(episode?.publishedAt),
+  };
+}
+
+function extractKakuyomuWorkData(
   source: SourceIdentity,
   html: string,
-  checkedAt: string,
-): RemoteWorkSnapshot {
+): {
+  workId: string;
+  work: Record<string, unknown>;
+  apollo: Record<string, unknown>;
+  nextData: Record<string, unknown>;
+} {
   const $ = cheerio.load(html);
   const nextData = readJsonScript($);
   const query = nextData.query as Record<string, unknown> | undefined;
@@ -155,7 +187,36 @@ function parseKakuyomuSnapshot(
 
   const title = typeof work.title === 'string' ? work.title.trim() : '';
   if (!title) throw sourceError('parse_failed', 'Kakuyomu 作品缺少标题');
+  return { workId, work, apollo, nextData };
+}
 
+function resolveKakuyomuVolume(
+  apollo: Record<string, unknown>,
+  tocItem: Record<string, unknown>,
+  volumes: RemoteVolume[],
+  fallback: RemoteVolume,
+): RemoteVolume {
+  const volumeRef = tocItem.chapter && typeof tocItem.chapter === 'object'
+    ? (tocItem.chapter as { __ref?: unknown }).__ref
+    : undefined;
+  if (typeof volumeRef !== 'string') return fallback;
+  const remoteVolume = recordAt(apollo, volumeRef);
+  const title = typeof remoteVolume?.title === 'string' ? remoteVolume.title.trim() : '';
+  if (!title) return fallback;
+  const volume: RemoteVolume = {
+    remoteVolumeId: volumeRef.replace(/^Chapter:/, '') || `volume-${volumes.length + 1}`,
+    title,
+    sequence: volumes.length,
+  };
+  volumes.push(volume);
+  return volume;
+}
+
+function collectKakuyomuChapters(
+  apollo: Record<string, unknown>,
+  source: SourceIdentity,
+  work: Record<string, unknown>,
+): { volumes: RemoteVolume[]; chapters: RemoteChapterStub[] } {
   const toc = Array.isArray(work.tableOfContentsV2)
     ? work.tableOfContentsV2
     : Array.isArray(work.tableOfContents)
@@ -164,7 +225,6 @@ function parseKakuyomuSnapshot(
   const volumes: RemoteVolume[] = [];
   const chapters: RemoteChapterStub[] = [];
   let currentVolume: RemoteVolume = { remoteVolumeId: 'main', title: '正文', sequence: 0 };
-  let sequence = 0;
 
   for (const tocRef of toc) {
     const ref = tocRef && typeof tocRef === 'object' ? (tocRef as { __ref?: unknown }).__ref : undefined;
@@ -172,48 +232,27 @@ function parseKakuyomuSnapshot(
     const tocItem = recordAt(apollo, ref);
     if (!tocItem) continue;
 
-    const volumeRef = tocItem.chapter && typeof tocItem.chapter === 'object'
-      ? (tocItem.chapter as { __ref?: unknown }).__ref
-      : undefined;
-    if (typeof volumeRef === 'string') {
-      const remoteVolume = recordAt(apollo, volumeRef);
-      const remoteVolumeTitle = typeof remoteVolume?.title === 'string' ? remoteVolume.title.trim() : '';
-      if (remoteVolumeTitle) {
-        currentVolume = {
-          remoteVolumeId: volumeRef.replace(/^Chapter:/, '') || `volume-${volumes.length + 1}`,
-          title: remoteVolumeTitle,
-          sequence: volumes.length,
-        };
-        volumes.push(currentVolume);
-      }
-    }
+    currentVolume = resolveKakuyomuVolume(apollo, tocItem, volumes, currentVolume);
 
     const episodes = Array.isArray(tocItem.episodeUnions) ? tocItem.episodeUnions : [];
     for (const episodeRef of episodes) {
-      const refValue = episodeRef && typeof episodeRef === 'object'
-        ? (episodeRef as { __ref?: unknown }).__ref
-        : undefined;
-      if (typeof refValue !== 'string') continue;
-      const episode = recordAt(apollo, refValue);
-      const remoteChapterId = typeof episode?.id === 'string' ? episode.id : '';
-      const chapterTitle = typeof episode?.title === 'string' ? episode.title.trim() : '';
-      if (!remoteChapterId || !chapterTitle) continue;
-      const canonicalChapterUrl = `${source.canonicalWorkUrl}/episodes/${remoteChapterId}`;
-      chapters.push({
-        ...source,
-        remoteChapterId,
-        canonicalChapterUrl,
-        title: chapterTitle,
-        volume: currentVolume,
-        sequence,
-        publishedAt: parseOptionalDate(episode?.publishedAt),
-        remoteUpdatedAt: parseOptionalDate(episode?.publishedAt),
-      });
-      sequence += 1;
+      const chapter = kakuyomuEpisodeFromRef(apollo, source, currentVolume, episodeRef, chapters.length);
+      if (chapter) chapters.push(chapter);
     }
   }
 
   if (volumes.length === 0 && chapters.length > 0) volumes.push(currentVolume);
+  return { volumes, chapters };
+}
+
+function parseKakuyomuSnapshot(
+  source: SourceIdentity,
+  html: string,
+  checkedAt: string,
+): RemoteWorkSnapshot {
+  const { work, apollo } = extractKakuyomuWorkData(source, html);
+  const { volumes, chapters } = collectKakuyomuChapters(apollo, source, work);
+
   const expectedChapterCount =
     typeof work.publicEpisodeCount === 'number' ? work.publicEpisodeCount : undefined;
   if (expectedChapterCount !== undefined && expectedChapterCount !== chapters.length) {
@@ -230,7 +269,7 @@ function parseKakuyomuSnapshot(
 
   return {
     source,
-    title,
+    title: (typeof work.title === 'string' ? work.title.trim() : '') || '未知标题',
     author:
       (typeof authorData?.activityName === 'string' && authorData.activityName) ||
       (typeof authorData?.name === 'string' && authorData.name) ||
@@ -298,6 +337,40 @@ const kakuyomuAdapter: SourceAdapter = {
   },
 };
 
+function parseChapterListFromAnchors(
+  $: cheerio.CheerioAPI,
+  source: SourceIdentity,
+  listSelector: string,
+  chapterPattern: RegExp,
+): RemoteChapterStub[] {
+  const chapters: RemoteChapterStub[] = [];
+  const seen = new Set<string>();
+  $(listSelector).each((_, element) => {
+    const href = $(element).attr('href');
+    if (!href) return;
+    let input: URL;
+    try {
+      input = new URL(href, source.canonicalWorkUrl);
+    } catch {
+      return;
+    }
+    const match = input.pathname.match(chapterPattern);
+    if (match?.[1]?.toLowerCase() !== source.remoteWorkId || !match[2] || seen.has(match[2])) {
+      return;
+    }
+    seen.add(match[2]);
+    chapters.push({
+      ...source,
+      remoteChapterId: match[2],
+      canonicalChapterUrl: `${source.canonicalWorkUrl}/${match[2]}`,
+      title: normalizedText($(element).text()),
+      volume: DEFAULT_VOLUME,
+      sequence: chapters.length,
+    });
+  });
+  return chapters;
+}
+
 const DEFAULT_VOLUME: RemoteVolume = { remoteVolumeId: 'main', title: '正文', sequence: 0 };
 const NOBADNOVEL_HOSTS = new Set(['nobadnovel.com', 'www.nobadnovel.com']);
 
@@ -323,31 +396,12 @@ const nobadnovelAdapter: SourceAdapter = {
     assertWorkIdentity($, source);
     const title = normalizedText($('main h1').first().text());
     if (!title) throw sourceError('parse_failed', 'NoBadNovel 作品缺少标题');
-    const chapters: RemoteChapterStub[] = [];
-    const seen = new Set<string>();
-    $('#chapter-list a[href]').each((_, element) => {
-      const href = $(element).attr('href');
-      if (!href) return;
-      let input: URL;
-      try {
-        input = new URL(href, source.canonicalWorkUrl);
-      } catch {
-        return;
-      }
-      const match = input.pathname.match(/^\/series\/([a-z0-9-]+)\/(chapter-[a-z0-9-]+)\/?$/i);
-      if (match?.[1]?.toLowerCase() !== source.remoteWorkId || !match[2] || seen.has(match[2])) {
-        return;
-      }
-      seen.add(match[2]);
-      chapters.push({
-        ...source,
-        remoteChapterId: match[2],
-        canonicalChapterUrl: `${source.canonicalWorkUrl}/${match[2]}`,
-        title: normalizedText($(element).text()),
-        volume: DEFAULT_VOLUME,
-        sequence: chapters.length,
-      });
-    });
+    const chapters = parseChapterListFromAnchors(
+      $,
+      source,
+      '#chapter-list a[href]',
+      /^\/series\/([a-z0-9-]+)\/(chapter-[a-z0-9-]+)\/?$/i,
+    );
     if (chapters.length === 0) throw sourceError('parse_failed', '无法解析 NoBadNovel 目录');
     const authorLabel = $('span')
       .filter((_, element) => normalizedText($(element).text()) === 'Author:')
@@ -391,31 +445,12 @@ const freewebnovelAdapter: SourceAdapter = {
     assertWorkIdentity($, source);
     const title = textMeta($, 'meta[property="og:title"]') || normalizedText($('h1').first().text());
     if (!title) throw sourceError('parse_failed', 'FreeWebNovel 作品缺少标题');
-    const chapters: RemoteChapterStub[] = [];
-    const seen = new Set<string>();
-    $('#idData a[href]').each((_, element) => {
-      const href = $(element).attr('href');
-      if (!href) return;
-      let input: URL;
-      try {
-        input = new URL(href, source.canonicalWorkUrl);
-      } catch {
-        return;
-      }
-      const match = input.pathname.match(/^\/novel\/([a-z0-9-]+)\/(chapter-[a-z0-9.-]+)\/?$/i);
-      if (match?.[1]?.toLowerCase() !== source.remoteWorkId || !match[2] || seen.has(match[2])) {
-        return;
-      }
-      seen.add(match[2]);
-      chapters.push({
-        ...source,
-        remoteChapterId: match[2],
-        canonicalChapterUrl: `${source.canonicalWorkUrl}/${match[2]}`,
-        title: normalizedText($(element).text()),
-        volume: DEFAULT_VOLUME,
-        sequence: chapters.length,
-      });
-    });
+    const chapters = parseChapterListFromAnchors(
+      $,
+      source,
+      '#idData a[href]',
+      /^\/novel\/([a-z0-9-]+)\/(chapter-[a-z0-9.-]+)\/?$/i,
+    );
     if (chapters.length === 0) throw sourceError('parse_failed', '无法解析 FreeWebNovel 目录');
     return {
       source,
