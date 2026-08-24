@@ -1,6 +1,11 @@
 import type { Novel } from './novel';
 
-export type SourceKey = 'kakuyomu' | 'narou-metadata';
+export type SourceKey =
+  | 'kakuyomu'
+  | 'narou-metadata'
+  | 'nobadnovel'
+  | 'freewebnovel'
+  | 'novellunar';
 
 export type ImportMode = 'preview' | 'import' | 'refresh' | 'retry_failed';
 
@@ -38,6 +43,10 @@ export type ImportErrorCode =
   | 'cancelled'
   | 'electron_unavailable'
   | 'job_body_limit_exceeded'
+  | 'challenge_detected'
+  | 'provider_unavailable'
+  | 'provider_error'
+  | 'budget_exceeded'
   | 'unknown';
 
 export interface ImportError {
@@ -134,6 +143,8 @@ export interface ImportJob {
   status: ImportJobStatus;
   counts: ImportJobCounts;
   bodyBytes: number;
+  maxProviderCostMicros?: number | undefined;
+  providerCostMicrosUsed?: number | undefined;
   createdAt: string;
   updatedAt: string;
   completedAt?: string | undefined;
@@ -189,7 +200,17 @@ export interface ImportFetchRequest {
   sourceKey: SourceKey;
   kind: ImportFetchKind;
   url: string;
+  jobId?: string | undefined;
+  maxProviderCostMicros?: number | undefined;
+  providerCostMicrosUsed?: number | undefined;
 }
+
+export type ImportFetchProvider =
+  | 'direct'
+  | 'scrape-do'
+  | 'scrapingant'
+  | 'zenrows'
+  | 'zyte';
 
 export interface ImportFetchResponse {
   finalUrl: string;
@@ -200,8 +221,22 @@ export interface ImportFetchResponse {
 }
 
 export type ImportFetchResult =
-  | { ok: true; response: ImportFetchResponse }
-  | { ok: false; error: ImportError };
+  | {
+      ok: true;
+      response: ImportFetchResponse;
+      provider?: ImportFetchProvider | undefined;
+      attempts?: number | undefined;
+      providerCreditsUsed?: number | undefined;
+      costMicros?: number | undefined;
+    }
+  | {
+      ok: false;
+      error: ImportError;
+      provider?: ImportFetchProvider | undefined;
+      attempts?: number | undefined;
+      providerCreditsUsed?: number | undefined;
+      costMicros?: number | undefined;
+    };
 
 export interface CreateImportJobRequest {
   url: string;
@@ -210,6 +245,8 @@ export interface CreateImportJobRequest {
   selectedRemoteChapterIds?: string[] | undefined;
   /** Kakuyomu is enabled only for an acknowledged private-use import. */
   privateUseAcknowledged?: boolean | undefined;
+  /** Zero keeps managed provider calls disabled for this job. */
+  maxProviderCostMicros?: number | undefined;
 }
 
 export const ACTIVE_IMPORT_JOB_STATUSES: ReadonlySet<ImportJobStatus> = new Set([

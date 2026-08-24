@@ -3,6 +3,7 @@ import {
   classifyImportHttpError,
   createPinnedLookup,
   ImportFetchPolicyError,
+  isImportChallengeResponse,
   isAllowedImportContentType,
   resolvePublicAddress,
   toImportFetchError,
@@ -82,5 +83,12 @@ describe('import fetch policy', () => {
       message: 'fixture timeout',
       retryable: true,
     });
+    expect(
+      isImportChallengeResponse(
+        403,
+        '<title>Just a moment...</title><script src="https://challenges.cloudflare.com"></script>',
+      ),
+    ).toBe(true);
+    expect(isImportChallengeResponse(403, '<html>ordinary forbidden page</html>')).toBe(false);
   });
 });

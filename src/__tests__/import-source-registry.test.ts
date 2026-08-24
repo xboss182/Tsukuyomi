@@ -11,6 +11,36 @@ const kakuyomuChapter = readFileSync(
   'utf-8',
 );
 
+const privateSourceFixtures = [
+  {
+    url: 'https://www.nobadnovel.com/series/poor-talent-i-bought-a-year-of-cultivation-for-one-dollar',
+    key: 'nobadnovel',
+    title: 'Poor Talent? I Bought a Year of Cultivation for One Dollar!',
+    work: 'nobadnovel-work.html',
+    chapter: 'nobadnovel-chapter.html',
+    expectedCount: 2,
+    expectedText: 'Jiangcheng No. 3 High School',
+  },
+  {
+    url: 'https://freewebnovel.com/novel/a-demon-lords-tale-dungeons-monster-girls-and-heartwarming-bliss',
+    key: 'freewebnovel',
+    title: "A Demon Lord's Tale: Dungeons, Monster Girls, and Heartwarming Bliss",
+    work: 'freewebnovel-work.html',
+    chapter: 'freewebnovel-chapter.html',
+    expectedCount: 2,
+    expectedText: 'unfamiliar wings',
+  },
+  {
+    url: 'https://novellunar.com/novel/the-artist-who-paints-dungeon',
+    key: 'novellunar',
+    title: 'The Artist Who Paints Dungeon',
+    work: 'novellunar-work.html',
+    chapter: 'novellunar-chapter.html',
+    expectedCount: 371,
+    expectedText: 'haunted portrait',
+  },
+] as const;
+
 describe('SourceRegistry', () => {
   it('detects only canonical HTTPS Kakuyomu and Narou work URLs', () => {
     expect(
@@ -87,4 +117,38 @@ describe('SourceRegistry', () => {
     expect(snapshot.chapters).toEqual([]);
     expect('parseChapter' in adapter).toBe(false);
   });
+
+  for (const fixture of privateSourceFixtures) {
+    it(`detects and parses recorded ${fixture.key} fixtures`, async () => {
+      const { url, key, title, work, chapter, expectedCount, expectedText } = fixture;
+      const source = SourceRegistry.detect(url);
+      expect(source?.sourceKey).toBe(key);
+      if (!source) throw new Error(`${key} fixture source was not detected`);
+
+      const adapter = SourceRegistry.get(source.sourceKey);
+      const snapshot = adapter.discover(
+        source,
+        readFileSync(join(fixtures, work), 'utf-8'),
+        '2026-08-24T00:00:00.000Z',
+      );
+      expect(snapshot.title).toBe(title);
+      expect(snapshot.chapters).toHaveLength(expectedCount);
+      expect(new Set(snapshot.chapters.map((item) => item.remoteChapterId)).size).toBe(
+        expectedCount,
+      );
+
+      const firstChapter = snapshot.chapters[0];
+      if (!firstChapter || !adapter.parseChapter) throw new Error(`${key} chapter was not parsed`);
+      const body = await adapter.parseChapter(
+        firstChapter,
+        readFileSync(join(fixtures, chapter), 'utf-8'),
+      );
+      expect(body.paragraphs.join('\n')).toContain(expectedText);
+      expect(body.paragraphs.join('\n')).not.toContain('<p');
+      expect(body.contentHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(SourceRegistry.matchesChapterUrl(firstChapter.canonicalChapterUrl, firstChapter)).toBe(
+        true,
+      );
+    });
+  }
 });

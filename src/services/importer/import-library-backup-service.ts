@@ -5,6 +5,7 @@ import type {
   ImportLibraryBackup,
 } from 'src/models/importer';
 import { getDB } from 'src/utils/indexed-db';
+import { clearCache as clearChapterContentCache } from 'src/utils/chapter-content-loader';
 
 const LIBRARY_STORE_NAMES = [
   'books',
@@ -138,5 +139,6 @@ export class ImportLibraryBackupService {
       ...backup.jobItems.map((item) => tx.objectStore('import-job-items').put(item)),
     ]);
     await tx.done;
+    clearChapterContentCache();
   }
 }

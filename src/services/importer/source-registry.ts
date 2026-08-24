@@ -59,6 +59,65 @@ function parseOptionalDate(value: unknown): string | undefined {
   return new Date(value).toISOString();
 }
 
+function normalizedText(value: string): string {
+  return value.replace(/\uFEFF/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function canonicalHtmlUrl($: cheerio.CheerioAPI): string | undefined {
+  return $('link[rel="canonical"]').attr('href') || $('meta[property="og:url"]').attr('content');
+}
+
+function assertWorkIdentity($: cheerio.CheerioAPI, source: SourceIdentity): void {
+  const canonical = canonicalHtmlUrl($);
+  if (canonical && !SourceRegistry.matchesWorkUrl(canonical, source)) {
+    throw sourceError('parse_failed', '来源作品身份不匹配');
+  }
+}
+
+function textMeta($: cheerio.CheerioAPI, selector: string): string | undefined {
+  const value = normalizedText($(selector).attr('content') || '');
+  return value || undefined;
+}
+
+async function chapterBody(
+  html: string,
+  selector: string,
+  parserVersion: string,
+  sourceName: string,
+): Promise<RemoteChapterBody> {
+  const $ = cheerio.load(html);
+  const root = $(selector).first();
+  if (root.length === 0) throw sourceError('parse_failed', `无法解析 ${sourceName} 章节正文`);
+  root.find('script,style,noscript,iframe,form,nav,header,footer,button').remove();
+  const paragraphs = root.find('p').length
+    ? root
+        .find('p')
+        .map((_, element) => normalizedText($(element).text()))
+        .get()
+        .filter(Boolean)
+    : root
+        .text()
+        .split(/\n\s*\n/)
+        .map(normalizedText)
+        .filter(Boolean);
+  if (paragraphs.length === 0) throw sourceError('parse_failed', `${sourceName} 章节正文为空`);
+  return {
+    paragraphs,
+    contentHash: await hashString(paragraphs.join('\n\n')),
+    parserVersion,
+  };
+}
+
+function isCanonicalInput(input: URL, hosts: ReadonlySet<string>): boolean {
+  return (
+    input.protocol === 'https:' &&
+    hosts.has(input.hostname) &&
+    !input.username &&
+    !input.password &&
+    !input.port
+  );
+}
+
 function readJsonScript($: cheerio.CheerioAPI): Record<string, unknown> {
   const raw = $('script#__NEXT_DATA__').html();
   if (!raw) throw sourceError('parse_failed', '无法解析 Kakuyomu 目录');
@@ -239,6 +298,202 @@ const kakuyomuAdapter: SourceAdapter = {
   },
 };
 
+const DEFAULT_VOLUME: RemoteVolume = { remoteVolumeId: 'main', title: '正文', sequence: 0 };
+const NOBADNOVEL_HOSTS = new Set(['nobadnovel.com', 'www.nobadnovel.com']);
+
+const nobadnovelAdapter: SourceAdapter = {
+  key: 'nobadnovel',
+  capabilities: new Set(['metadata', 'chapter-content']),
+  allowedHosts: NOBADNOVEL_HOSTS,
+  minimumSpacingMs: 2000,
+  parserVersion: 'nobadnovel-v1',
+  detect(input) {
+    if (!isCanonicalInput(input, NOBADNOVEL_HOSTS)) return null;
+    const match = input.pathname.match(/^\/series\/([a-z0-9-]+)(?:\/chapter-[a-z0-9-]+)?\/?$/i);
+    if (!match?.[1]) return null;
+    const remoteWorkId = match[1].toLowerCase();
+    return {
+      sourceKey: 'nobadnovel',
+      remoteWorkId,
+      canonicalWorkUrl: `https://www.nobadnovel.com/series/${remoteWorkId}`,
+    };
+  },
+  discover(source, html) {
+    const $ = cheerio.load(html);
+    assertWorkIdentity($, source);
+    const title = normalizedText($('main h1').first().text());
+    if (!title) throw sourceError('parse_failed', 'NoBadNovel 作品缺少标题');
+    const chapters: RemoteChapterStub[] = [];
+    const seen = new Set<string>();
+    $('#chapter-list a[href]').each((_, element) => {
+      const href = $(element).attr('href');
+      if (!href) return;
+      let input: URL;
+      try {
+        input = new URL(href, source.canonicalWorkUrl);
+      } catch {
+        return;
+      }
+      const match = input.pathname.match(/^\/series\/([a-z0-9-]+)\/(chapter-[a-z0-9-]+)\/?$/i);
+      if (match?.[1]?.toLowerCase() !== source.remoteWorkId || !match[2] || seen.has(match[2])) {
+        return;
+      }
+      seen.add(match[2]);
+      chapters.push({
+        ...source,
+        remoteChapterId: match[2],
+        canonicalChapterUrl: `${source.canonicalWorkUrl}/${match[2]}`,
+        title: normalizedText($(element).text()),
+        volume: DEFAULT_VOLUME,
+        sequence: chapters.length,
+      });
+    });
+    if (chapters.length === 0) throw sourceError('parse_failed', '无法解析 NoBadNovel 目录');
+    const authorLabel = $('span')
+      .filter((_, element) => normalizedText($(element).text()) === 'Author:')
+      .first();
+    return {
+      source,
+      title,
+      author: normalizedText(authorLabel.parent().children().last().text()) || undefined,
+      description: textMeta($, 'meta[name="description"]'),
+      volumes: [DEFAULT_VOLUME],
+      chapters,
+      metadataOnly: false,
+    };
+  },
+  parseChapter(_source, html) {
+    return chapterBody(html, 'h1 + div', 'nobadnovel-v1', 'NoBadNovel');
+  },
+};
+
+const FREEWEBNOVEL_HOSTS = new Set(['freewebnovel.com', 'www.freewebnovel.com']);
+
+const freewebnovelAdapter: SourceAdapter = {
+  key: 'freewebnovel',
+  capabilities: new Set(['metadata', 'chapter-content']),
+  allowedHosts: FREEWEBNOVEL_HOSTS,
+  minimumSpacingMs: 2000,
+  parserVersion: 'freewebnovel-v1',
+  detect(input) {
+    if (!isCanonicalInput(input, FREEWEBNOVEL_HOSTS)) return null;
+    const match = input.pathname.match(/^\/novel\/([a-z0-9-]+)(?:\/chapter-[a-z0-9.-]+)?\/?$/i);
+    if (!match?.[1]) return null;
+    const remoteWorkId = match[1].toLowerCase();
+    return {
+      sourceKey: 'freewebnovel',
+      remoteWorkId,
+      canonicalWorkUrl: `https://freewebnovel.com/novel/${remoteWorkId}`,
+    };
+  },
+  discover(source, html) {
+    const $ = cheerio.load(html);
+    assertWorkIdentity($, source);
+    const title = textMeta($, 'meta[property="og:title"]') || normalizedText($('h1').first().text());
+    if (!title) throw sourceError('parse_failed', 'FreeWebNovel 作品缺少标题');
+    const chapters: RemoteChapterStub[] = [];
+    const seen = new Set<string>();
+    $('#idData a[href]').each((_, element) => {
+      const href = $(element).attr('href');
+      if (!href) return;
+      let input: URL;
+      try {
+        input = new URL(href, source.canonicalWorkUrl);
+      } catch {
+        return;
+      }
+      const match = input.pathname.match(/^\/novel\/([a-z0-9-]+)\/(chapter-[a-z0-9.-]+)\/?$/i);
+      if (match?.[1]?.toLowerCase() !== source.remoteWorkId || !match[2] || seen.has(match[2])) {
+        return;
+      }
+      seen.add(match[2]);
+      chapters.push({
+        ...source,
+        remoteChapterId: match[2],
+        canonicalChapterUrl: `${source.canonicalWorkUrl}/${match[2]}`,
+        title: normalizedText($(element).text()),
+        volume: DEFAULT_VOLUME,
+        sequence: chapters.length,
+      });
+    });
+    if (chapters.length === 0) throw sourceError('parse_failed', '无法解析 FreeWebNovel 目录');
+    return {
+      source,
+      title,
+      author: normalizedText($('.m-book1 a[href^="/author/"]').first().text()) || undefined,
+      description: textMeta($, 'meta[property="og:description"]'),
+      volumes: [DEFAULT_VOLUME],
+      chapters,
+      metadataOnly: false,
+    };
+  },
+  parseChapter(_source, html) {
+    return chapterBody(html, '#article', 'freewebnovel-v1', 'FreeWebNovel');
+  },
+};
+
+const NOVELLUNAR_HOSTS = new Set(['novellunar.com', 'www.novellunar.com']);
+
+const novellunarAdapter: SourceAdapter = {
+  key: 'novellunar',
+  capabilities: new Set(['metadata', 'chapter-content']),
+  allowedHosts: NOVELLUNAR_HOSTS,
+  minimumSpacingMs: 2000,
+  parserVersion: 'novellunar-v1',
+  detect(input) {
+    if (!isCanonicalInput(input, NOVELLUNAR_HOSTS)) return null;
+    const match = input.pathname.match(/^\/novel\/([a-z0-9-]+)(?:\/chapter\/(\d+))?\/?$/i);
+    if (!match?.[1]) return null;
+    const remoteWorkId = match[1].toLowerCase();
+    return {
+      sourceKey: 'novellunar',
+      remoteWorkId,
+      canonicalWorkUrl: `https://novellunar.com/novel/${remoteWorkId}`,
+    };
+  },
+  discover(source, html) {
+    const $ = cheerio.load(html);
+    assertWorkIdentity($, source);
+    const title = normalizedText($('h1').filter((_, element) => {
+      const value = normalizedText($(element).text());
+      return value !== 'Novellunar';
+    }).first().text());
+    if (!title) throw sourceError('parse_failed', 'NovelLunar 作品缺少标题');
+    const chapterCountMatch = $('body').text().match(/\b([\d,]+)\s+chapters\b/i);
+    const chapterCount = Number(chapterCountMatch?.[1]?.replace(/,/g, ''));
+    if (!Number.isSafeInteger(chapterCount) || chapterCount < 1 || chapterCount > 10_000) {
+      throw sourceError('parse_failed', '无法解析 NovelLunar 目录');
+    }
+    const chapters = Array.from({ length: chapterCount }, (_, index): RemoteChapterStub => {
+      const chapterNumber = index + 1;
+      return {
+        ...source,
+        remoteChapterId: String(chapterNumber),
+        canonicalChapterUrl: `${source.canonicalWorkUrl}/chapter/${chapterNumber}`,
+        title: `Chapter ${chapterNumber}`,
+        volume: DEFAULT_VOLUME,
+        sequence: index,
+      };
+    });
+    return {
+      source,
+      title,
+      author: normalizedText($('a[href^="/author/"]').first().text()) || undefined,
+      description: textMeta($, 'meta[name="description"]'),
+      tags: $('a[href$="-online-novel"]')
+        .map((_, element) => normalizedText($(element).text()))
+        .get()
+        .filter(Boolean),
+      volumes: [DEFAULT_VOLUME],
+      chapters,
+      metadataOnly: false,
+    };
+  },
+  parseChapter(_source, html) {
+    return chapterBody(html, 'article > div', 'novellunar-v1', 'NovelLunar');
+  },
+};
+
 interface NarouApiRecord {
   ncode?: unknown;
   title?: unknown;
@@ -301,7 +556,13 @@ const narouAdapter: SourceAdapter = {
   },
 };
 
-const adapters: SourceAdapter[] = [kakuyomuAdapter, narouAdapter];
+const adapters: SourceAdapter[] = [
+  kakuyomuAdapter,
+  narouAdapter,
+  nobadnovelAdapter,
+  freewebnovelAdapter,
+  novellunarAdapter,
+];
 
 export class SourceRegistry {
   static detect(url: string): SourceIdentity | null {
@@ -347,19 +608,23 @@ export class SourceRegistry {
   }
 
   static matchesChapterUrl(url: string, source: RemoteChapterStub): boolean {
-    if (source.sourceKey !== 'kakuyomu') return false;
     try {
       const input = new URL(url);
+      const identity = this.detect(input.href);
       if (
-        input.protocol !== 'https:' ||
-        input.hostname !== 'kakuyomu.jp' ||
-        input.username ||
-        input.password
+        identity?.sourceKey !== source.sourceKey ||
+        identity.remoteWorkId !== source.remoteWorkId
       ) {
         return false;
       }
-      const match = input.pathname.match(/^\/works\/(\d+)\/episodes\/([^/]+)\/?$/);
-      return match?.[1] === source.remoteWorkId && match[2] === source.remoteChapterId;
+      const patterns: Partial<Record<SourceKey, RegExp>> = {
+        kakuyomu: /^\/works\/([^/]+)\/episodes\/([^/]+)\/?$/,
+        nobadnovel: /^\/series\/([^/]+)\/(chapter-[^/]+)\/?$/,
+        freewebnovel: /^\/novel\/([^/]+)\/(chapter-[^/]+)\/?$/,
+        novellunar: /^\/novel\/([^/]+)\/chapter\/(\d+)\/?$/,
+      };
+      const match = patterns[source.sourceKey]?.exec(input.pathname);
+      return match?.[1]?.toLowerCase() === source.remoteWorkId && match[2] === source.remoteChapterId;
     } catch {
       return false;
     }

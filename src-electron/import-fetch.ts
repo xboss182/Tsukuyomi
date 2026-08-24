@@ -46,6 +46,17 @@ function error(code: ImportErrorCode, message: string, retryable = false): Impor
   return { code, message, retryable };
 }
 
+export function toImportFetchError(reason: unknown): ImportError {
+  if (reason instanceof ImportFetchPolicyError) {
+    return error(
+      reason.code,
+      reason.message,
+      reason.code === 'timeout' || reason.code === 'network_error',
+    );
+  }
+  return error('network_error', '导入请求失败', true);
+}
+
 function headerValue(headers: IncomingMessage['headers'], name: string): string | undefined {
   const value = headers[name];
   return Array.isArray(value) ? value[0] : value;
@@ -71,6 +82,11 @@ export function isAllowedImportContentType(
 
 function isRetryableHttpStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
+}
+
+export function isImportChallengeResponse(status: number, body: string): boolean {
+  if (status !== 403 && status !== 429 && !/<title>\s*just a moment/i.test(body)) return false;
+  return /cf-chl|challenges\.cloudflare\.com|enable javascript and cookies|captcha/i.test(body);
 }
 
 function cleanUrl(url: URL): URL {
@@ -129,12 +145,41 @@ function validateNarou(url: URL, kind: ImportFetchRequest['kind']): ValidatedReq
   };
 }
 
+function validatePrivateNovelSource(
+  url: URL,
+  kind: ImportFetchRequest['kind'],
+  hosts: ReadonlySet<string>,
+  workPattern: RegExp,
+  chapterPattern: RegExp,
+  sourceName: string,
+): ValidatedRequest {
+  if (!hosts.has(url.hostname) || url.search || url.hash || kind === 'metadata') {
+    throw new ImportFetchPolicyError('policy_disallowed', `${sourceName} 导入请求不符合来源策略`);
+  }
+  const chapter = chapterPattern.test(url.pathname);
+  if ((kind === 'chapter') !== chapter || (!chapter && !workPattern.test(url.pathname))) {
+    throw new ImportFetchPolicyError('invalid_url', `${sourceName} 导入地址无效`);
+  }
+  return {
+    url,
+    expectedContentType: 'html',
+    timeoutMs: chapter ? CHAPTER_TIMEOUT_MS : METADATA_TIMEOUT_MS,
+    maxBytes: chapter ? CHAPTER_MAX_BYTES : TOC_MAX_BYTES,
+  };
+}
+
 /** Validate a renderer request as an adapter-owned URL, not as a generic proxy target. */
 export function validateImportFetchRequest(request: unknown): ValidatedRequest {
   if (
     !request ||
     typeof request !== 'object' ||
-    !['kakuyomu', 'narou-metadata'].includes((request as { sourceKey?: unknown }).sourceKey as string) ||
+    ![
+      'kakuyomu',
+      'narou-metadata',
+      'nobadnovel',
+      'freewebnovel',
+      'novellunar',
+    ].includes((request as { sourceKey?: unknown }).sourceKey as string) ||
     !['metadata', 'toc', 'chapter'].includes((request as { kind?: unknown }).kind as string) ||
     typeof (request as { url?: unknown }).url !== 'string'
   ) {
@@ -159,9 +204,39 @@ export function validateImportFetchRequest(request: unknown): ValidatedRequest {
   ) {
     throw new ImportFetchPolicyError('invalid_url', '导入地址无效');
   }
-  return typedRequest.sourceKey === 'kakuyomu'
-    ? validateKakuyomu(url, typedRequest.kind)
-    : validateNarou(url, typedRequest.kind);
+  switch (typedRequest.sourceKey) {
+    case 'kakuyomu':
+      return validateKakuyomu(url, typedRequest.kind);
+    case 'narou-metadata':
+      return validateNarou(url, typedRequest.kind);
+    case 'nobadnovel':
+      return validatePrivateNovelSource(
+        url,
+        typedRequest.kind,
+        new Set(['nobadnovel.com', 'www.nobadnovel.com']),
+        /^\/series\/[a-z0-9-]+\/?$/i,
+        /^\/series\/[a-z0-9-]+\/chapter-[a-z0-9-]+\/?$/i,
+        'NoBadNovel',
+      );
+    case 'freewebnovel':
+      return validatePrivateNovelSource(
+        url,
+        typedRequest.kind,
+        new Set(['freewebnovel.com', 'www.freewebnovel.com']),
+        /^\/novel\/[a-z0-9-]+\/?$/i,
+        /^\/novel\/[a-z0-9-]+\/chapter-[a-z0-9.-]+\/?$/i,
+        'FreeWebNovel',
+      );
+    case 'novellunar':
+      return validatePrivateNovelSource(
+        url,
+        typedRequest.kind,
+        new Set(['novellunar.com', 'www.novellunar.com']),
+        /^\/novel\/[a-z0-9-]+\/?$/i,
+        /^\/novel\/[a-z0-9-]+\/chapter\/\d+\/?$/i,
+        'NovelLunar',
+      );
+  }
 }
 
 async function defaultLookup(hostname: string): Promise<LookupAddress[]> {
@@ -260,11 +335,7 @@ function requestOnce(validated: ValidatedRequest, pinned: LookupAddress): Promis
     };
 
     const fail = (value: unknown): void => {
-      if (value instanceof ImportFetchPolicyError) {
-        finish({ kind: 'error', error: error(value.code, value.message) });
-        return;
-      }
-      finish({ kind: 'error', error: error('network_error', '导入请求失败', true) });
+      finish({ kind: 'error', error: toImportFetchError(value) });
     };
 
     try {
@@ -297,6 +368,24 @@ function requestOnce(validated: ValidatedRequest, pinned: LookupAddress): Promis
             return;
           }
           if (status < 200 || status >= 300) {
+            if (status === 403 || status === 429) {
+              collectResponseBody(response, validated.maxBytes, (result) => {
+                if (result.ok && isImportChallengeResponse(status, result.body)) {
+                  finish({
+                    kind: 'error',
+                    error: error('challenge_detected', '导入来源返回了验证挑战', true),
+                  });
+                  return;
+                }
+                finish({
+                  kind: 'error',
+                  error: result.ok
+                    ? classifyImportHttpError(status, headerValue(response.headers, 'retry-after'))
+                    : result.error,
+                });
+              });
+              return;
+            }
             response.resume();
             finish({
               kind: 'error',
@@ -433,10 +522,7 @@ export async function performImportFetch(request: unknown): Promise<ImportFetchR
         return { ok: false, error: error('unsafe_redirect', '导入来源重定向到不安全地址') };
       }
     } catch (reason) {
-      if (reason instanceof ImportFetchPolicyError) {
-        return { ok: false, error: error(reason.code, reason.message) };
-      }
-      return { ok: false, error: error('network_error', '导入请求失败', true) };
+      return { ok: false, error: toImportFetchError(reason) };
     }
   }
   return { ok: false, error: error('unsafe_redirect', '导入来源重定向次数过多') };
