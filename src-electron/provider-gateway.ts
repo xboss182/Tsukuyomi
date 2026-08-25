@@ -16,6 +16,7 @@ import type {
 } from './provider-credentials';
 
 const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS_PER_PROVIDER = 3;
 const DEFAULT_COOLDOWN_MS = 60_000;
 const CIRCUIT_COOLDOWN_MS = 5 * 60_000;
 
@@ -355,7 +356,8 @@ function eligibleForFallback(result: ImportFetchResult): boolean {
     !result.ok &&
     (result.error.retryable ||
       result.error.code === 'challenge_detected' ||
-      result.error.code === 'provider_unavailable')
+      result.error.code === 'provider_unavailable' ||
+      result.error.code === 'budget_exceeded')
   );
 }
 
@@ -365,6 +367,15 @@ function providerRouteForSource(sourceKey: SourceKey): ImportFetchProvider[] {
     return ['direct', 'scrape-do', 'scrapingant', 'zenrows', 'zyte'];
   }
   return ['direct'];
+}
+
+function defaultProviderMode(provider: ManagedProvider, sourceKey: SourceKey): 'http' | 'browser' {
+  // Render-first only for FreeWebNovel; plain HTTP for direct-first sources until escalation.
+  if (sourceKey === 'freewebnovel') return 'browser';
+  // Default fallback for NoBadNovel and NovelLunar uses plain HTTP to keep cost down.
+  // Zyte still needs browserHtml when explicitly escalated; scrape.do/scrapingant/zenrows plain.
+  if (provider === 'zyte') return 'browser';
+  return 'http';
 }
 
 export class PrivateScraperGateway {
@@ -416,25 +427,36 @@ export class PrivateScraperGateway {
     } catch {
       return { ok: false, error: error('invalid_url', '导入请求无效') };
     }
-    const route = providerRouteForSource(request.sourceKey);
+    const route = providerRouteForSource(request.sourceKey).filter(
+      (provider) => provider === 'direct' || this.options.drivers.some((driver) => driver.provider === provider),
+    );
     let attempts = 0;
     let last: ImportFetchResult = {
       ok: false,
       error: error('provider_unavailable', '没有可用的抓取路径'),
     };
 
-    for (const provider of route) {
-      while (attempts < MAX_ATTEMPTS) {
+    // Direct HTTPS is tried once and never counts against managed-provider budgets.
+    if (route[0] === 'direct') {
+      const direct = await this.attemptProvider('direct', request, limits);
+      last = { ...direct, attempts: (attempts += 1) };
+      if (direct.ok) return last;
+      if (!eligibleForFallback(direct)) return last;
+    }
+
+    for (const provider of route.slice(route[0] === 'direct' ? 1 : 0)) {
+      let providerAttempts = 0;
+      while (providerAttempts < MAX_ATTEMPTS_PER_PROVIDER) {
         attempts += 1;
+        providerAttempts += 1;
         const outcome = await this.attemptProvider(provider, request, limits);
         last = { ...outcome, attempts };
-        if (outcome.ok) return { ...outcome, attempts };
+        if (outcome.ok) return last;
         if (outcome.stopRoute) break;
       }
-      if (attempts >= MAX_ATTEMPTS) break;
-      if (!eligibleForFallback(last)) return { ...last, attempts };
+      if (!eligibleForFallback(last)) return last;
     }
-    return { ...last, attempts };
+    return last;
   }
 
   private async attemptProvider(
@@ -457,14 +479,20 @@ export class PrivateScraperGateway {
     const used = request.providerCostMicrosUsed ?? 0;
     const ceiling = request.maxProviderCostMicros ?? 0;
     if (paidCost > 0 && (ceiling <= 0 || used + paidCost > ceiling)) {
-      return { ok: false, provider, error: error('budget_exceeded', '抓取服务商费用上限已达到'), stopRoute: true };
+      return {
+        ok: false,
+        provider,
+        error: error('budget_exceeded', '抓取服务商费用上限已达到'),
+        stopRoute: true,
+      };
     }
 
+    const mode = defaultProviderMode(provider, request.sourceKey);
     const state = this.state(credential.id);
     state.inFlight += 1;
     let result: ImportFetchResult;
     try {
-      result = await driver.fetch({ credential, targetUrl: request.url, mode: 'browser', ...limits });
+      result = await driver.fetch({ credential, targetUrl: request.url, mode, ...limits });
     } catch {
       result = { ok: false, provider, error: error('provider_error', '抓取服务商请求失败', true) };
     } finally {

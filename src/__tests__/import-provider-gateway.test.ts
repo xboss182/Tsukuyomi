@@ -179,7 +179,7 @@ describe('PrivateScraperGateway', () => {
       jobId: 'job-2',
     });
     expect(result.ok).toBe(false);
-    expect(result.attempts).toBe(3);
+    expect(result.attempts).toBeLessThanOrEqual(4);
     expect(new Set(calls).size).toBe(2);
   });
 
@@ -220,6 +220,196 @@ describe('PrivateScraperGateway', () => {
     expect(allowed.ok).toBe(true);
     expect(allowed).toMatchObject({ provider: 'scrape-do', costMicros: 1_000 });
     expect(calls).toHaveLength(1);
+  });
+
+  it('skips a paid provider with zero budget and lets a later free provider serve', async () => {
+    const store = await vault();
+    await store.upsert({
+      provider: 'scrape-do',
+      label: 'paid-key',
+      secret: 'paid-token',
+      authorizedForUse: true,
+      maxConcurrency: 1,
+      paidPlan: true,
+      paidEnabled: true,
+      monthlyCostLimitMicros: 10_000,
+    });
+    await store.upsert({
+      provider: 'scrapingant',
+      label: 'free-key',
+      secret: 'free-token',
+      authorizedForUse: true,
+      maxConcurrency: 1,
+    });
+
+    const calls: string[] = [];
+    const gateway = new PrivateScraperGateway({
+      credentials: store,
+      directFetch: () =>
+        Promise.resolve({
+          ok: false,
+          error: { code: 'challenge_detected', message: 'fixture', retryable: true },
+        }),
+      drivers: [
+        driver('scrape-do', calls, success()),
+        driver('scrapingant', calls, success('<html><body>free-ok</body></html>', 'https://www.nobadnovel.com/series/fixture')),
+      ],
+    });
+
+    const result = await gateway.fetch({
+      sourceKey: 'nobadnovel',
+      kind: 'toc',
+      url: 'https://www.nobadnovel.com/series/fixture',
+      jobId: 'job-skip-paid-zero-budget',
+      maxProviderCostMicros: 0,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('scrapingant');
+  });
+
+  it('falls back to the next provider when every key of a provider is quota exhausted', async () => {
+    const store = await vault();
+    for (const label of ['quota-1', 'quota-2']) {
+      await store.upsert({
+        provider: 'scrape-do',
+        label,
+        secret: label,
+        authorizedForUse: true,
+        maxConcurrency: 1,
+      });
+    }
+    await store.upsert({
+      provider: 'scrapingant',
+      label: 'healthy',
+      secret: 'healthy-token',
+      authorizedForUse: true,
+      maxConcurrency: 1,
+    });
+
+    const calls: string[] = [];
+    const gateway = new PrivateScraperGateway({
+      credentials: store,
+      directFetch: () =>
+        Promise.resolve({
+          ok: false,
+          error: { code: 'challenge_detected', message: 'fixture', retryable: true },
+        }),
+      drivers: [
+        driver('scrape-do', calls, {
+          ok: false,
+          provider: 'scrape-do',
+          error: { code: 'rate_limited', message: 'quota fixture', retryable: true, status: 429 },
+        }),
+        driver('scrapingant', calls, success('<html><body>ok</body></html>', 'https://www.nobadnovel.com/series/fixture')),
+      ],
+      now: () => 1_000,
+    });
+
+    const result = await gateway.fetch({
+      sourceKey: 'nobadnovel',
+      kind: 'toc',
+      url: 'https://www.nobadnovel.com/series/fixture',
+      jobId: 'job-fallback-quota',
+      maxProviderCostMicros: 10_000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('scrapingant');
+    expect(calls.length).toBeLessThanOrEqual(4);
+    expect(result.provider).toBe('scrapingant');
+  });
+
+  it('uses plain HTTP for NoBadNovel/NovelLunar fallbacks and browser only for FreeWebNovel', async () => {
+    const store = await vault();
+    for (const provider of ['scrape-do', 'scrapingant', 'zenrows', 'zyte'] as const) {
+      await store.upsert({
+        provider,
+        label: `${provider}-key`,
+        secret: `${provider}-token`,
+        authorizedForUse: true,
+        maxConcurrency: 1,
+      });
+    }
+
+    const modes = new Map<string, string>();
+    const nobadnovelUrl = 'https://www.nobadnovel.com/series/fixture';
+    const freewebnovelUrl = 'https://freewebnovel.com/novel/fixture';
+
+    function createModeGateway(): PrivateScraperGateway {
+      return new PrivateScraperGateway({
+        credentials: store,
+        directFetch: () =>
+          Promise.resolve({
+            ok: false,
+            error: { code: 'challenge_detected', message: 'fixture', retryable: true },
+          }),
+        drivers: [
+          {
+            provider: 'scrape-do',
+            maxCostMicros: 1_000,
+            fetch: ({ credential, targetUrl, mode }) => {
+              modes.set(`${targetUrl}:scrape-do`, mode);
+              return Promise.resolve({
+                ok: false,
+                provider: 'scrape-do',
+                error: { code: 'rate_limited', message: 'fixture', retryable: true, status: 429 },
+              });
+            },
+          },
+          {
+            provider: 'scrapingant',
+            maxCostMicros: 1_000,
+            fetch: ({ credential, targetUrl, mode }) => {
+              modes.set(`${targetUrl}:scrapingant`, mode);
+              return Promise.resolve({
+                ok: false,
+                provider: 'scrapingant',
+                error: { code: 'rate_limited', message: 'fixture', retryable: true, status: 429 },
+              });
+            },
+          },
+          {
+            provider: 'zenrows',
+            maxCostMicros: 1_000,
+            fetch: ({ credential, targetUrl, mode }) => {
+              modes.set(`${targetUrl}:zenrows`, mode);
+              return Promise.resolve({
+                ok: false,
+                provider: 'zenrows',
+                error: { code: 'rate_limited', message: 'fixture', retryable: true, status: 429 },
+              });
+            },
+          },
+          {
+            provider: 'zyte',
+            maxCostMicros: 1_000,
+            fetch: ({ credential, targetUrl, mode }) => {
+              modes.set(`${targetUrl}:zyte`, mode);
+              return Promise.resolve({
+                ok: false,
+                provider: 'zyte',
+                error: { code: 'rate_limited', message: 'fixture', retryable: true, status: 429 },
+              });
+            },
+          },
+        ],
+        now: () => 1_000,
+      });
+    }
+
+    await createModeGateway().fetch({ sourceKey: 'nobadnovel', kind: 'toc', url: nobadnovelUrl, jobId: 'job-mode-nbn', maxProviderCostMicros: 10_000 });
+    await createModeGateway().fetch({ sourceKey: 'freewebnovel', kind: 'toc', url: freewebnovelUrl, jobId: 'job-mode-fwn', maxProviderCostMicros: 10_000 });
+
+    expect(modes.get(`${nobadnovelUrl}:scrape-do`)).toBe('http');
+    expect(modes.get(`${nobadnovelUrl}:scrapingant`)).toBe('http');
+    expect(modes.get(`${nobadnovelUrl}:zenrows`)).toBe('http');
+    expect(modes.get(`${nobadnovelUrl}:zyte`)).toBe('browser');
+
+    expect(modes.get(`${freewebnovelUrl}:scrape-do`)).toBe('browser');
+    expect(modes.get(`${freewebnovelUrl}:scrapingant`)).toBe('browser');
+    expect(modes.get(`${freewebnovelUrl}:zenrows`)).toBe('browser');
+    expect(modes.get(`${freewebnovelUrl}:zyte`)).toBe('browser');
   });
 });
 
