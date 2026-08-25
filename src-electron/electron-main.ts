@@ -762,10 +762,9 @@ ipcMain.handle('provider-import-fetch', async (_event, request: unknown) => {
 });
 
 // Local health/readiness diagnostics — no network listener, no secrets.
-ipcMain.handle('import-runtime-status', async () => {
-  const renderer = typeof window !== 'undefined'
-    ? undefined
-    : await ImportJobService.runtimeStatus();
+// Main process returns only its own readiness; the renderer queries the
+// IndexedDB-backed queue status directly via ImportJobService.runtimeStatus().
+ipcMain.handle('import-runtime-status', () => {
   const readiness: MainProcessReadiness = {
     appReady: app.isReady(),
     safeStorageAvailable: safeStorage.isEncryptionAvailable(),
@@ -775,7 +774,7 @@ ipcMain.handle('import-runtime-status', async () => {
     timestamp: new Date().toISOString(),
     recentEvents: mainProcessDiagnostics.recent(),
   };
-  return { mainProcess: readiness, queue: renderer ?? null };
+  return { mainProcess: readiness, queue: null };
 });
 
 // IPC handler for saving exported settings
