@@ -17,14 +17,16 @@ import {
   createProviderDrivers,
   performProviderHttpRequest,
 } from './provider-gateway';
+import { mainProcessDiagnostics, type MainProcessReadiness } from '../src/services/importer/import-diagnostics';
+import { ImportJobService } from '../src/services/importer/import-job-service';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
 
 // Initialize puppeteer-in-electron
-console.log('[Electron] Initializing puppeteer-in-electron...');
+mainProcessDiagnostics.info('startup', 'initializing puppeteer-in-electron');
 await pie.initialize(app);
-console.log('[Electron] puppeteer-in-electron initialized');
+mainProcessDiagnostics.info('startup', 'puppeteer-in-electron ready');
 app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 // ESM 模块中获取 __dirname
@@ -51,8 +53,12 @@ function getCredentialVaultPath(): string {
 
 function ensureCredentialVault(): ProviderCredentialVault | null {
   if (credentialVault) return credentialVault;
-  if (!safeStorage.isEncryptionAvailable()) return null;
+  if (!safeStorage.isEncryptionAvailable()) {
+    mainProcessDiagnostics.warn('credentials', 'OS safeStorage unavailable; provider features disabled');
+    return null;
+  }
   credentialVault = new ProviderCredentialVault(getCredentialVaultPath(), safeStorageCrypto);
+  mainProcessDiagnostics.info('credentials', 'credential vault initialized');
   return credentialVault;
 }
 
@@ -65,6 +71,7 @@ function ensureScraperGateway(): PrivateScraperGateway | null {
     directFetch: (request) => performImportFetch(request),
     drivers: createProviderDrivers((req) => performProviderHttpRequest(req)),
   });
+  mainProcessDiagnostics.info('provider', 'scraper gateway initialized');
   return scraperGateway;
 }
 
@@ -746,11 +753,29 @@ ipcMain.handle('provider-import-fetch', async (_event, request: unknown) => {
   try {
     return await gateway.fetch(request as ImportFetchRequest);
   } catch (error) {
+    mainProcessDiagnostics.error('provider', `fetch failed: ${getErrorMessage(error)}`);
     return {
       ok: false,
       error: { code: 'provider_error', message: getErrorMessage(error), retryable: true },
     } as ImportFetchResult;
   }
+});
+
+// Local health/readiness diagnostics — no network listener, no secrets.
+ipcMain.handle('import-runtime-status', async () => {
+  const renderer = typeof window !== 'undefined'
+    ? undefined
+    : await ImportJobService.runtimeStatus();
+  const readiness: MainProcessReadiness = {
+    appReady: app.isReady(),
+    safeStorageAvailable: safeStorage.isEncryptionAvailable(),
+    gatewayReady: scraperGateway !== null,
+    puppeteerReady: browserPromise !== null,
+    version: app.getVersion(),
+    timestamp: new Date().toISOString(),
+    recentEvents: mainProcessDiagnostics.recent(),
+  };
+  return { mainProcess: readiness, queue: renderer ?? null };
 });
 
 // IPC handler for saving exported settings
@@ -802,4 +827,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Graceful shutdown: drain the import queue so the active fetch persists its
+// result before the process exits. Startup recovery handles the rest on next launch.
+app.on('before-quit', () => {
+  mainProcessDiagnostics.info('shutdown', 'beginning import queue drain');
+  void ImportJobService.beginShutdown();
 });
