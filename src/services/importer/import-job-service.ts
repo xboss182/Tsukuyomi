@@ -13,6 +13,7 @@ import type {
   SourceWorkMetadata,
 } from './types';
 import { ACTIVE_IMPORT_JOB_STATUSES, INTERRUPTED_IMPORT_JOB_STATUSES } from './types';
+import type { ImportQueueRuntimeStatus } from './import-diagnostics';
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId, UniqueIdGenerator } from 'src/utils/id-generator';
 import { serializeDates } from 'src/utils/serialize-dates';
@@ -68,6 +69,8 @@ const lastRequestStartedAt = new Map<string, number>();
 let workerRunning = false;
 let workerPromise: Promise<void> | null = null;
 let createJobTail: Promise<void> = Promise.resolve();
+/** Graceful-shutdown drain: once set, no new jobs start and the active fetch completes. */
+let shuttingDown = false;
 
 function now(): string {
   return new Date(importClock.now()).toISOString();
@@ -370,6 +373,7 @@ async function fetchWithRetries(
 }
 
 function scheduleNextImportJob(): void {
+  if (shuttingDown) return;
   if (workerPromise) return;
   workerPromise = ImportJobService.runNextImportJob().finally(() => {
     workerPromise = null;
@@ -400,6 +404,40 @@ export class ImportJobService {
   static setFetchForTesting(fetcher: ImportFetch | null): void {
     fetchImportResource = fetcher ?? ((request) => performRendererFetch(request));
     lastRequestStartedAt.clear();
+  }
+
+  /**
+   * Graceful-shutdown drain. Once set, `scheduleNextImportJob` stops starting
+   * new jobs. The currently running fetch completes and its result is
+   * persisted before the process exits; recovery handles the rest on restart.
+   * Returns the active worker promise so a caller can await drain completion.
+   */
+  static beginShutdown(): Promise<void> {
+    shuttingDown = true;
+    return workerPromise ?? Promise.resolve();
+  }
+
+  /**
+   * Runtime readiness snapshot distinguishing runtime readiness from job
+   * failures. `ready` is true when the worker is idle and recovery has run
+   * with no interrupted jobs pending — individual job failures surface in
+   * `failedJobs`, not in `ready`.
+   */
+  static async runtimeStatus(): Promise<ImportQueueRuntimeStatus> {
+    const db = await getDB();
+    const jobs = await db.getAll('import-jobs');
+    const count = (predicate: (job: ImportJob) => boolean): number =>
+      jobs.filter(predicate).length;
+    return {
+      ready: !workerRunning && !shuttingDown && count((job) => INTERRUPTED_IMPORT_JOB_STATUSES.has(job.status)) === 0,
+      workerRunning,
+      shuttingDown,
+      activeJobs: count((job) => ACTIVE_IMPORT_JOB_STATUSES.has(job.status)),
+      interruptedJobs: count((job) => INTERRUPTED_IMPORT_JOB_STATUSES.has(job.status)),
+      failedJobs: count((job) => job.status === 'failed'),
+      completedJobs: count((job) => job.status === 'completed' || job.status === 'completed_with_errors'),
+      totalJobs: jobs.length,
+    };
   }
 
   static async createImportJob(request: CreateImportJobRequest): Promise<ImportJob> {
@@ -959,4 +997,5 @@ export function __resetImportJobServiceForTesting(): void {
   lastRequestStartedAt.clear();
   workerRunning = false;
   workerPromise = null;
+  shuttingDown = false;
 }
