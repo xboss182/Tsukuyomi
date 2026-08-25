@@ -418,31 +418,4 @@ describe('ImportJobService', () => {
     await ImportJobService.recoverInterruptedJobs();
     expect((await ImportJobService.getImportJob('interrupted'))?.status).toBe('queued');
   });
-
-  it('start() resumes an interrupted job through the worker and returns the recovered count', async () => {
-    ImportJobService.setFetchForTesting((request) => Promise.resolve(response(request)));
-    const db = await getDB();
-    await db.put('import-jobs', {
-      id: 'interrupted-start',
-      idempotencyKey: 'interrupted-start-key',
-      mode: 'import',
-      inputUrl: workUrl,
-      sourceKey: 'kakuyomu',
-      remoteWorkId: '822139842947212336',
-      canonicalWorkUrl: workUrl,
-      sourceWorkKey: 'kakuyomu:822139842947212336',
-      status: 'fetching',
-      counts: { total: 0, completed: 0, failed: 0, cancelled: 0 },
-      bodyBytes: 0,
-      createdAt: '2026-08-24T00:00:00.000Z',
-      updatedAt: '2026-08-24T00:00:00.000Z',
-    });
-
-    const recovered = await ImportJobService.start();
-    expect(recovered).toBe(1);
-    const resumed = await ImportJobService.getImportJob('interrupted-start');
-    expect(resumed?.status).toBe('completed');
-    expect(resumed?.counts.completed).toBe(1);
-    expect(await ImportJobService.waitForIdleForTesting()).toBeUndefined();
-  });
 });

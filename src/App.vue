@@ -55,15 +55,9 @@ onMounted(async () => {
     console.error('Failed to load initial data:', error);
   });
   if (isElectron()) {
-    void ImportJobService.start()
-      .then((recovered) => {
-        if (recovered > 0) {
-          console.info(`[App] 已恢复 ${recovered} 个被中断的导入任务`);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to resume import jobs:', error);
-      });
+    void ImportJobService.start().catch((error) => {
+      console.error('Failed to resume import jobs:', error);
+    });
   }
 
   // 检测数据库阻塞：如果 5 秒内数据仍未加载完成且 DB 被阻塞，提示用户

@@ -13,22 +13,20 @@ import { performImportFetch } from './import-fetch';
 import { ProviderCredentialVault, type CredentialCrypto } from './provider-credentials';
 import type { ImportFetchRequest, ImportFetchResult } from '../src/models/importer';
 import {
-  collectImportJobDiagnostics,
-  type ImportJobDiagnostics,
-} from '../src/services/importer/import-job-diagnostics';
-import {
   PrivateScraperGateway,
   createProviderDrivers,
   performProviderHttpRequest,
 } from './provider-gateway';
+import { mainProcessDiagnostics, type MainProcessReadiness } from '../src/services/importer/import-diagnostics';
+import { ImportJobService } from '../src/services/importer/import-job-service';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
 
 // Initialize puppeteer-in-electron
-console.log('[Electron] Initializing puppeteer-in-electron...');
+mainProcessDiagnostics.info('startup', 'initializing puppeteer-in-electron');
 await pie.initialize(app);
-console.log('[Electron] puppeteer-in-electron initialized');
+mainProcessDiagnostics.info('startup', 'puppeteer-in-electron ready');
 app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 // ESM 模块中获取 __dirname
@@ -55,8 +53,12 @@ function getCredentialVaultPath(): string {
 
 function ensureCredentialVault(): ProviderCredentialVault | null {
   if (credentialVault) return credentialVault;
-  if (!safeStorage.isEncryptionAvailable()) return null;
+  if (!safeStorage.isEncryptionAvailable()) {
+    mainProcessDiagnostics.warn('credentials', 'OS safeStorage unavailable; provider features disabled');
+    return null;
+  }
   credentialVault = new ProviderCredentialVault(getCredentialVaultPath(), safeStorageCrypto);
+  mainProcessDiagnostics.info('credentials', 'credential vault initialized');
   return credentialVault;
 }
 
@@ -69,6 +71,7 @@ function ensureScraperGateway(): PrivateScraperGateway | null {
     directFetch: (request) => performImportFetch(request),
     drivers: createProviderDrivers((req) => performProviderHttpRequest(req)),
   });
+  mainProcessDiagnostics.info('provider', 'scraper gateway initialized');
   return scraperGateway;
 }
 
@@ -750,6 +753,7 @@ ipcMain.handle('provider-import-fetch', async (_event, request: unknown) => {
   try {
     return await gateway.fetch(request as ImportFetchRequest);
   } catch (error) {
+    mainProcessDiagnostics.error('provider', `fetch failed: ${getErrorMessage(error)}`);
     return {
       ok: false,
       error: { code: 'provider_error', message: getErrorMessage(error), retryable: true },
@@ -757,10 +761,20 @@ ipcMain.handle('provider-import-fetch', async (_event, request: unknown) => {
   }
 });
 
-// Local import/job state diagnostics. Read-only; distinguishes app readiness
-// from individual job failures. Never includes response bodies or credentials.
-ipcMain.handle('import-diagnostics', async (): Promise<ImportJobDiagnostics> => {
-  return await collectImportJobDiagnostics();
+// Local health/readiness diagnostics — no network listener, no secrets.
+// Main process returns only its own readiness; the renderer queries the
+// IndexedDB-backed queue status directly via ImportJobService.runtimeStatus().
+ipcMain.handle('import-runtime-status', () => {
+  const readiness: MainProcessReadiness = {
+    appReady: app.isReady(),
+    safeStorageAvailable: safeStorage.isEncryptionAvailable(),
+    gatewayReady: scraperGateway !== null,
+    puppeteerReady: browserPromise !== null,
+    version: app.getVersion(),
+    timestamp: new Date().toISOString(),
+    recentEvents: mainProcessDiagnostics.recent(),
+  };
+  return { mainProcess: readiness, queue: null };
 });
 
 // IPC handler for saving exported settings
@@ -814,29 +828,9 @@ app.on('window-all-closed', () => {
   }
 });
 
-/**
- * 优雅停机：退出前把正在执行/排队的导入任务重新排队为中断状态，
- * 下次启动时 recoverInterruptedJobs()（由 start() 驱动）会继续执行。
- * 注意：before-quit 的异步工作不会阻塞退出；若进程在写盘前终止，
- * 启动恢复路径依然会重放所有非终态任务，因此不会丢失队列。
- */
-let interruptedOnShutdown = false;
+// Graceful shutdown: drain the import queue so the active fetch persists its
+// result before the process exits. Startup recovery handles the rest on next launch.
 app.on('before-quit', () => {
-  if (interruptedOnShutdown) return;
-  interruptedOnShutdown = true;
-  void (async () => {
-    try {
-      const { ImportJobService } = await import('../src/services/importer/import-job-service');
-      const active = (await ImportJobService.listImportJobs()).filter((job) =>
-        ['queued', 'discovering', 'fetching', 'applying'].includes(job.status),
-      );
-      for (const job of active) {
-        // 写成中断状态（非终态），启动恢复路径会重新排队并继续；不用 cancel，
-        // 否则 requeue 后 runJob 会保留 cancellationRequested 而跳过重跑。
-        await ImportJobService.updateJob(job.id, { status: 'discovering' as const });
-      }
-    } catch (error) {
-      console.error('[Electron] Failed to mark import jobs interrupted on shutdown:', error);
-    }
-  })();
+  mainProcessDiagnostics.info('shutdown', 'beginning import queue drain');
+  void ImportJobService.beginShutdown();
 });

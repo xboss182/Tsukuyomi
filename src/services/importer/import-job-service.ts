@@ -13,6 +13,7 @@ import type {
   SourceWorkMetadata,
 } from './types';
 import { ACTIVE_IMPORT_JOB_STATUSES, INTERRUPTED_IMPORT_JOB_STATUSES } from './types';
+import type { ImportQueueRuntimeStatus } from './import-diagnostics';
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId, UniqueIdGenerator } from 'src/utils/id-generator';
 import { serializeDates } from 'src/utils/serialize-dates';
@@ -68,6 +69,8 @@ const lastRequestStartedAt = new Map<string, number>();
 let workerRunning = false;
 let workerPromise: Promise<void> | null = null;
 let createJobTail: Promise<void> = Promise.resolve();
+/** Graceful-shutdown drain: once set, no new jobs start and the active fetch completes. */
+let shuttingDown = false;
 
 function now(): string {
   return new Date(importClock.now()).toISOString();
@@ -370,6 +373,7 @@ async function fetchWithRetries(
 }
 
 function scheduleNextImportJob(): void {
+  if (shuttingDown) return;
   if (workerPromise) return;
   workerPromise = ImportJobService.runNextImportJob().finally(() => {
     workerPromise = null;
@@ -400,6 +404,40 @@ export class ImportJobService {
   static setFetchForTesting(fetcher: ImportFetch | null): void {
     fetchImportResource = fetcher ?? ((request) => performRendererFetch(request));
     lastRequestStartedAt.clear();
+  }
+
+  /**
+   * Graceful-shutdown drain. Once set, `scheduleNextImportJob` stops starting
+   * new jobs. The currently running fetch completes and its result is
+   * persisted before the process exits; recovery handles the rest on restart.
+   * Returns the active worker promise so a caller can await drain completion.
+   */
+  static beginShutdown(): Promise<void> {
+    shuttingDown = true;
+    return workerPromise ?? Promise.resolve();
+  }
+
+  /**
+   * Runtime readiness snapshot distinguishing runtime readiness from job
+   * failures. `ready` is true when the worker is idle and recovery has run
+   * with no interrupted jobs pending — individual job failures surface in
+   * `failedJobs`, not in `ready`.
+   */
+  static async runtimeStatus(): Promise<ImportQueueRuntimeStatus> {
+    const db = await getDB();
+    const jobs = await db.getAll('import-jobs');
+    const count = (predicate: (job: ImportJob) => boolean): number =>
+      jobs.filter(predicate).length;
+    return {
+      ready: !workerRunning && !shuttingDown && count((job) => INTERRUPTED_IMPORT_JOB_STATUSES.has(job.status)) === 0,
+      workerRunning,
+      shuttingDown,
+      activeJobs: count((job) => ACTIVE_IMPORT_JOB_STATUSES.has(job.status)),
+      interruptedJobs: count((job) => INTERRUPTED_IMPORT_JOB_STATUSES.has(job.status)),
+      failedJobs: count((job) => job.status === 'failed'),
+      completedJobs: count((job) => job.status === 'completed' || job.status === 'completed_with_errors'),
+      totalJobs: jobs.length,
+    };
   }
 
   static async createImportJob(request: CreateImportJobRequest): Promise<ImportJob> {
@@ -536,11 +574,11 @@ export class ImportJobService {
     return job;
   }
 
-  static async recoverInterruptedJobs(): Promise<number> {
+  static async recoverInterruptedJobs(): Promise<void> {
     const db = await getDB();
     const jobs = await db.getAll('import-jobs');
     const interrupted = jobs.filter((job) => INTERRUPTED_IMPORT_JOB_STATUSES.has(job.status));
-    if (interrupted.length === 0) return 0;
+    if (interrupted.length === 0) return;
 
     const tx = db.transaction('import-jobs', 'readwrite');
     for (const job of interrupted) {
@@ -552,16 +590,11 @@ export class ImportJobService {
       });
     }
     await tx.done;
-    return interrupted.length;
   }
 
-  static async start(): Promise<number> {
-    const recovered = await this.recoverInterruptedJobs();
-    // Await the same serial worker that drives new imports so recovered and any
-    // leftover queued jobs resume after restart, and so a worker failure surfaces
-    // through start()'s caller instead of an unhandled rejection that strands them.
-    await this.runNextImportJob();
-    return recovered;
+  static async start(): Promise<void> {
+    await this.recoverInterruptedJobs();
+    scheduleNextImportJob();
   }
 
   /** @internal Tests await the same serial worker that production schedules in the background. */
@@ -897,7 +930,7 @@ export class ImportJobService {
     await tx.done;
   }
 
-  static async updateJob(
+  private static async updateJob(
     id: string,
     updates: Partial<ImportJob>,
   ): Promise<ImportJob | undefined> {
@@ -964,4 +997,5 @@ export function __resetImportJobServiceForTesting(): void {
   lastRequestStartedAt.clear();
   workerRunning = false;
   workerPromise = null;
+  shuttingDown = false;
 }

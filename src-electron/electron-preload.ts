@@ -56,9 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   providerImportFetch: (request: unknown) => ipcRenderer.invoke('provider-import-fetch', request),
 
   /**
-   * 本地导入/抓取任务状态诊断（只读，不含机密）
+   * 本地健康/就绪诊断（无网络监听器、无凭据）
    */
-  importDiagnostics: () => ipcRenderer.invoke('import-diagnostics'),
+  importRuntimeStatus: () => ipcRenderer.invoke('import-runtime-status'),
 
   /**
    * 设置相关的 IPC 通信
