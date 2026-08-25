@@ -64,6 +64,14 @@
     "description": "本地嵌入引擎完整说明：gte-multilingual-base 模型（CLS pooling）、WebGPU/WASM 后端、批量嵌入面板、长文分段嵌入、模型版本与 stale 重算、同步 sync gate、故障排查"
   },
   {
+    "id": "import-recovery-guide",
+    "title": "导入与恢复说明",
+    "file": "import-recovery-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "小说导入任务队列、重启恢复、本地诊断、手动备份/恢复与抓取服务商凭据的本地安全存储说明"
+  },
+  {
     "id": "book-details-overview",
     "title": "书籍详情页概览",
     "file": "book-details-overview.md",

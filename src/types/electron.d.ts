@@ -3,6 +3,7 @@
  * 通过 preload 脚本暴露给渲染进程的 API
  */
 import type { ImportFetchRequest, ImportFetchResult } from 'src/models/importer';
+import type { ImportJobDiagnostics } from 'src/services/importer/import-job-diagnostics';
 
 export interface ElectronAPI {
   /** 受来源策略约束的导入请求，不是通用 HTTP 代理。 */
@@ -54,6 +55,11 @@ export interface ElectronAPI {
    * 提供商路由的受约束导入请求
    */
   providerImportFetch: (request: ImportFetchRequest) => Promise<ImportFetchResult>;
+
+  /**
+   * 本地导入/抓取任务状态诊断（只读，不含机密）
+   */
+  importDiagnostics: () => Promise<ImportJobDiagnostics>;
 
   /**
    * 设置相关的 IPC 通信

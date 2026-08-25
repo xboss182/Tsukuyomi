@@ -13,6 +13,10 @@ import { performImportFetch } from './import-fetch';
 import { ProviderCredentialVault, type CredentialCrypto } from './provider-credentials';
 import type { ImportFetchRequest, ImportFetchResult } from '../src/models/importer';
 import {
+  collectImportJobDiagnostics,
+  type ImportJobDiagnostics,
+} from '../src/services/importer/import-job-diagnostics';
+import {
   PrivateScraperGateway,
   createProviderDrivers,
   performProviderHttpRequest,
@@ -753,6 +757,12 @@ ipcMain.handle('provider-import-fetch', async (_event, request: unknown) => {
   }
 });
 
+// Local import/job state diagnostics. Read-only; distinguishes app readiness
+// from individual job failures. Never includes response bodies or credentials.
+ipcMain.handle('import-diagnostics', async (): Promise<ImportJobDiagnostics> => {
+  return await collectImportJobDiagnostics();
+});
+
 // IPC handler for saving exported settings
 ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {
   try {
@@ -802,4 +812,31 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+/**
+ * 优雅停机：退出前把正在执行/排队的导入任务重新排队为中断状态，
+ * 下次启动时 recoverInterruptedJobs()（由 start() 驱动）会继续执行。
+ * 注意：before-quit 的异步工作不会阻塞退出；若进程在写盘前终止，
+ * 启动恢复路径依然会重放所有非终态任务，因此不会丢失队列。
+ */
+let interruptedOnShutdown = false;
+app.on('before-quit', () => {
+  if (interruptedOnShutdown) return;
+  interruptedOnShutdown = true;
+  void (async () => {
+    try {
+      const { ImportJobService } = await import('../src/services/importer/import-job-service');
+      const active = (await ImportJobService.listImportJobs()).filter((job) =>
+        ['queued', 'discovering', 'fetching', 'applying'].includes(job.status),
+      );
+      for (const job of active) {
+        // 写成中断状态（非终态），启动恢复路径会重新排队并继续；不用 cancel，
+        // 否则 requeue 后 runJob 会保留 cancellationRequested 而跳过重跑。
+        await ImportJobService.updateJob(job.id, { status: 'discovering' as const });
+      }
+    } catch (error) {
+      console.error('[Electron] Failed to mark import jobs interrupted on shutdown:', error);
+    }
+  })();
 });

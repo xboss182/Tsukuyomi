@@ -536,11 +536,11 @@ export class ImportJobService {
     return job;
   }
 
-  static async recoverInterruptedJobs(): Promise<void> {
+  static async recoverInterruptedJobs(): Promise<number> {
     const db = await getDB();
     const jobs = await db.getAll('import-jobs');
     const interrupted = jobs.filter((job) => INTERRUPTED_IMPORT_JOB_STATUSES.has(job.status));
-    if (interrupted.length === 0) return;
+    if (interrupted.length === 0) return 0;
 
     const tx = db.transaction('import-jobs', 'readwrite');
     for (const job of interrupted) {
@@ -552,11 +552,16 @@ export class ImportJobService {
       });
     }
     await tx.done;
+    return interrupted.length;
   }
 
-  static async start(): Promise<void> {
-    await this.recoverInterruptedJobs();
-    scheduleNextImportJob();
+  static async start(): Promise<number> {
+    const recovered = await this.recoverInterruptedJobs();
+    // Await the same serial worker that drives new imports so recovered and any
+    // leftover queued jobs resume after restart, and so a worker failure surfaces
+    // through start()'s caller instead of an unhandled rejection that strands them.
+    await this.runNextImportJob();
+    return recovered;
   }
 
   /** @internal Tests await the same serial worker that production schedules in the background. */
@@ -892,7 +897,7 @@ export class ImportJobService {
     await tx.done;
   }
 
-  private static async updateJob(
+  static async updateJob(
     id: string,
     updates: Partial<ImportJob>,
   ): Promise<ImportJob | undefined> {
