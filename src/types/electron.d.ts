@@ -3,6 +3,10 @@
  * 通过 preload 脚本暴露给渲染进程的 API
  */
 import type { ImportFetchRequest, ImportFetchResult } from 'src/models/importer';
+import type {
+  ImportQueueRuntimeStatus,
+  MainProcessReadiness,
+} from 'src/services/importer/import-diagnostics';
 
 export interface ElectronAPI {
   /** 受来源策略约束的导入请求，不是通用 HTTP 代理。 */
@@ -54,6 +58,12 @@ export interface ElectronAPI {
    * 提供商路由的受约束导入请求
    */
   providerImportFetch: (request: ImportFetchRequest) => Promise<ImportFetchResult>;
+
+  /** 本地健康/就绪诊断（无网络监听器、无凭据） */
+  importRuntimeStatus: () => Promise<{
+    mainProcess: MainProcessReadiness;
+    queue: ImportQueueRuntimeStatus | null;
+  }>;
 
   /**
    * 设置相关的 IPC 通信
