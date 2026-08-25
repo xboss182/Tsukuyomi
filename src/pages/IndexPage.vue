@@ -7,6 +7,7 @@
 import { computed } from 'vue';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
+import NovelImportDialog from 'src/components/dialogs/NovelImportDialog.vue';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { provideIndexPage } from 'src/composables/index-page/useIndexPage';
 import IndexPageDesktop from './index-page/IndexPageDesktop.vue';
@@ -14,6 +15,7 @@ import IndexPageTablet from './index-page/IndexPageTablet.vue';
 import IndexPageMobile from './index-page/IndexPageMobile.vue';
 
 const ctx = provideIndexPage();
+const showNovelImportDialog = ctx.showNovelImportDialog;
 const { variant } = useDeviceVariant();
 
 const variantComponent = computed(() => {
@@ -44,4 +46,5 @@ const variantComponent = computed(() => {
     :current-book="null"
     @apply="ctx.handleImportBook"
   />
+  <NovelImportDialog v-model:visible="showNovelImportDialog" />
 </template>

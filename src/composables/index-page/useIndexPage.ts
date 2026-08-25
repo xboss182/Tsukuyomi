@@ -16,6 +16,7 @@ import {
   createImportBookHandler,
   createSaveNewBookHandler,
 } from 'src/composables/shared/useBookImportActions';
+import { provideNovelImport } from 'src/composables/novel-import/useNovelImport';
 
 /**
  * IndexPage 业务逻辑 composable + provide/inject 辅助。
@@ -30,6 +31,7 @@ const INDEX_PAGE_KEY: InjectionKey<IndexPageContext> = Symbol('index-page');
 export function provideIndexPage(): IndexPageContext {
   const ctx = createIndexPageContext();
   provide(INDEX_PAGE_KEY, ctx);
+  provideNovelImport();
   return ctx;
 }
 
@@ -53,6 +55,7 @@ function createIndexPageContext() {
 
   const showAddDialog = ref(false);
   const showImportDialog = ref(false);
+  const showNovelImportDialog = ref(false);
 
   const { loadBookCharCount, getTotalWords, isLoadingCharCount } = useNovelCharCount();
 
@@ -99,7 +102,7 @@ function createIndexPageContext() {
   };
 
   const importBookFromWeb = () => {
-    showImportDialog.value = true;
+    showNovelImportDialog.value = true;
   };
 
   const handleImportBook = createImportBookHandler({
@@ -162,6 +165,7 @@ function createIndexPageContext() {
     logoPath,
     showAddDialog,
     showImportDialog,
+    showNovelImportDialog,
     isLoadingCharCount,
     getTotalWords,
     getTotalChapters,
