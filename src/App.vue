@@ -12,6 +12,8 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useContextStore } from 'src/stores/context';
 import { useElectronSettings } from 'src/composables/useElectronSettings';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { ImportJobService } from 'src/services/importer/import-job-service';
+import { isElectron } from 'src/utils/platform';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -52,6 +54,11 @@ onMounted(async () => {
   ]).catch((error) => {
     console.error('Failed to load initial data:', error);
   });
+  if (isElectron()) {
+    void ImportJobService.start().catch((error) => {
+      console.error('Failed to resume import jobs:', error);
+    });
+  }
 
   // 检测数据库阻塞：如果 5 秒内数据仍未加载完成且 DB 被阻塞，提示用户
   const blockCheckTimer = setTimeout(() => {

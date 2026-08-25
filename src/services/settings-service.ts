@@ -5,6 +5,7 @@ import {
   parseAiModels,
   parseAppSettings,
   parseCoverHistory,
+  parseImportLibrary,
   parseMemories,
   parseNovels,
   parseSyncConfigs,
@@ -27,6 +28,7 @@ interface ImportCounts {
   memories: number;
   sync: number;
   appSettings: boolean;
+  importLibrary: boolean;
 }
 
 interface BookImportShape {
@@ -87,6 +89,7 @@ function buildImportMessage(counts: ImportCounts): string {
   if (counts.memories > 0) parts.push(`${counts.memories} 条 Memory 记录`);
   if (counts.sync > 0) parts.push(`${counts.sync} 个同步配置`);
   if (counts.appSettings) parts.push('应用设置');
+  if (counts.importLibrary) parts.push('导入库备份');
   return parts.join('、');
 }
 
@@ -100,6 +103,7 @@ interface ParsedImportSections {
   memories: ReturnType<typeof parseMemories>;
   sync: ReturnType<typeof parseSyncConfigs>;
   appSettings: ReturnType<typeof parseAppSettings>;
+  importLibrary: ReturnType<typeof parseImportLibrary>;
 }
 
 /**
@@ -113,6 +117,7 @@ function parseImportedSections(settings: Settings): ParsedImportSections {
     memories: parseMemories(settings.memories),
     sync: parseSyncConfigs(settings.sync),
     appSettings: parseAppSettings(settings.appSettings),
+    importLibrary: parseImportLibrary(settings.importLibrary),
   };
 }
 
@@ -126,7 +131,8 @@ function hasImportedContent(sections: ParsedImportSections): boolean {
     sections.coverHistory.length > 0 ||
     sections.memories.length > 0 ||
     sections.sync.length > 0 ||
-    Boolean(sections.appSettings)
+    Boolean(sections.appSettings) ||
+    Boolean(sections.importLibrary)
   );
 }
 
@@ -216,6 +222,7 @@ export class SettingsService {
         memories: sections.memories.length,
         sync: sections.sync.length,
         appSettings: Boolean(sections.appSettings),
+        importLibrary: Boolean(sections.importLibrary),
       })}`,
       data: {
         models: sections.models,
@@ -224,6 +231,7 @@ export class SettingsService {
         ...(sections.memories.length > 0 ? { memories: sections.memories } : {}),
         ...(sections.sync.length > 0 ? { sync: sections.sync } : {}),
         ...(sections.appSettings ? { appSettings: sections.appSettings } : {}),
+        ...(sections.importLibrary ? { importLibrary: sections.importLibrary } : {}),
       },
     };
   }

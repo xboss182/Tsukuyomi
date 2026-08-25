@@ -4,6 +4,8 @@ import type { Novel, CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
+import type { ImportLibraryBackup } from 'src/models/importer';
+import { ImportLibraryBackupService } from 'src/services/importer/import-library-backup-service';
 
 /**
  * 将 Date / number / string 转成毫秒时间戳。
@@ -35,7 +37,16 @@ export function validateSettingsShape(settings: Settings): string | null {
   if (settings.sync !== undefined && !Array.isArray(settings.sync)) {
     return '设置数据中的 sync 字段格式无效';
   }
+  if (settings.importLibrary !== undefined && (!settings.importLibrary || typeof settings.importLibrary !== 'object')) {
+    return '设置数据中的 importLibrary 字段格式无效';
+  }
   return null;
+}
+
+/** 解析本地导入库备份；它不属于 Gist 同步格式。 */
+export function parseImportLibrary(raw: unknown): ImportLibraryBackup | undefined {
+  if (raw === undefined) return undefined;
+  return ImportLibraryBackupService.parseBackup(raw);
 }
 
 export function parseAiModels(raw: unknown[]): AIModel[] {

@@ -1,13 +1,22 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, shell, dialog, safeStorage } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import type { Buffer } from 'node:buffer';
 import puppeteer from 'puppeteer-extra';
 import type { Browser, Page } from 'puppeteer';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
+import { performImportFetch } from './import-fetch';
+import { ProviderCredentialVault, type CredentialCrypto } from './provider-credentials';
+import type { ImportFetchRequest, ImportFetchResult } from '../src/models/importer';
+import {
+  PrivateScraperGateway,
+  createProviderDrivers,
+  performProviderHttpRequest,
+} from './provider-gateway';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
@@ -26,6 +35,39 @@ const __dirname = dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let browserPromise: Promise<Browser> | null = null;
+// Provider credential vault and gateway (local encrypted storage only)
+let credentialVault: ProviderCredentialVault | null = null;
+let scraperGateway: PrivateScraperGateway | null = null;
+
+const safeStorageCrypto: CredentialCrypto = {
+  isAvailable: () => safeStorage.isEncryptionAvailable(),
+  encrypt: (value: string) => safeStorage.encryptString(value),
+  decrypt: (value: Buffer) => safeStorage.decryptString(value),
+};
+
+function getCredentialVaultPath(): string {
+  return join(app.getPath('userData'), 'provider-credentials.json');
+}
+
+function ensureCredentialVault(): ProviderCredentialVault | null {
+  if (credentialVault) return credentialVault;
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  credentialVault = new ProviderCredentialVault(getCredentialVaultPath(), safeStorageCrypto);
+  return credentialVault;
+}
+
+function ensureScraperGateway(): PrivateScraperGateway | null {
+  if (scraperGateway) return scraperGateway;
+  const credentials = ensureCredentialVault();
+  if (!credentials) return null;
+  scraperGateway = new PrivateScraperGateway({
+    credentials,
+    directFetch: (request) => performImportFetch(request),
+    drivers: createProviderDrivers((req) => performProviderHttpRequest(req)),
+  });
+  return scraperGateway;
+}
+
 
 // 检测是否为开发环境
 // 优先检查 app.isPackaged（Electron 打包后的标志）
@@ -275,7 +317,7 @@ function createWindow() {
       ...(preloadPath ? { preload: preloadPath } : {}),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true,
     },
   });
 
@@ -659,6 +701,57 @@ async function performElectronFetch(
 ipcMain.handle('electron-fetch', (_event, url: string, options?: ElectronFetchOptions) =>
   performElectronFetch(url, options),
 );
+
+// Strict source-owned import fetch; it never reuses the generic Puppeteer path.
+ipcMain.handle('import-fetch', (_event, request: unknown) => performImportFetch(request));
+
+// Provider credential management (encrypted with OS safeStorage)
+ipcMain.handle('provider-credentials:list', () => {
+  const vault = ensureCredentialVault();
+  if (!vault) return { ok: false, error: '系统安全存储不可用' } as const;
+  return { ok: true, credentials: vault.list() } as const;
+});
+
+ipcMain.handle('provider-credentials:upsert', async (_event, input: unknown) => {
+  const vault = ensureCredentialVault();
+  if (!vault) return { ok: false, error: '系统安全存储不可用' } as const;
+  try {
+    const summary = await vault.upsert(input as Parameters<ProviderCredentialVault['upsert']>[0]);
+    return { ok: true, summary } as const;
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error) } as const;
+  }
+});
+
+ipcMain.handle('provider-credentials:remove', async (_event, id: string) => {
+  const vault = ensureCredentialVault();
+  if (!vault) return { ok: false, error: '系统安全存储不可用' } as const;
+  try {
+    await vault.remove(id);
+    return { ok: true } as const;
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error) } as const;
+  }
+});
+
+// Provider-backed import fetch (source-policy validated, budget-aware)
+ipcMain.handle('provider-import-fetch', async (_event, request: unknown) => {
+  const gateway = ensureScraperGateway();
+  if (!gateway) {
+    return {
+      ok: false,
+      error: { code: 'electron_unavailable', message: '系统安全存储不可用', retryable: false },
+    } as ImportFetchResult;
+  }
+  try {
+    return await gateway.fetch(request as ImportFetchRequest);
+  } catch (error) {
+    return {
+      ok: false,
+      error: { code: 'provider_error', message: getErrorMessage(error), retryable: true },
+    } as ImportFetchResult;
+  }
+});
 
 // IPC handler for saving exported settings
 ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {

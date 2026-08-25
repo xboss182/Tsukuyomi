@@ -2,6 +2,7 @@ import type { AIModel, AIModelDefaultTasks } from '../services/ai/types/ai-model
 import type { Novel, CoverHistoryItem } from './novel';
 import type { SyncConfig } from './sync';
 import type { Memory } from './memory';
+import type { ImportLibraryBackup } from './importer';
 
 /**
  * 任务默认模型配置
@@ -163,6 +164,8 @@ export interface Settings {
   coverHistory?: CoverHistoryItem[];
   memories?: Memory[];
   appSettings?: AppSettings;
+  /** 本地手工备份的库快照；含章节正文与导入任务账本，不上传到 Gist。 */
+  importLibrary?: ImportLibraryBackup;
 }
 
 export interface ExportResult {
@@ -182,5 +185,6 @@ export interface ImportResult {
     coverHistory: CoverHistoryItem[];
     memories?: Memory[];
     appSettings?: AppSettings;
+    importLibrary?: ImportLibraryBackup;
   };
 }
