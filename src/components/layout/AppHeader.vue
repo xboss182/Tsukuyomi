@@ -202,7 +202,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
           {{ unreadBadge }}
         </NotificationBadge>
       </button>
-
     </div>
 
     <ToastHistoryDialog ref="toastHistoryRef" />

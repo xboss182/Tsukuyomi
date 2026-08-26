@@ -3,13 +3,13 @@ import { computed } from 'vue';
 import InputText from 'primevue/inputtext';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
-import { injectNovelImport } from 'src/composables/novel-import/useNovelImport';
+import { injectNovelImportDialog } from 'src/composables/novel-import/useNovelImportDialog';
 import NovelImportUrlInput from './NovelImportUrlInput.vue';
 import NovelImportPreview from './NovelImportPreview.vue';
 import NovelImportProgress from './NovelImportProgress.vue';
 import NovelImportResult from './NovelImportResult.vue';
 
-const ctx = injectNovelImport();
+const ctx = injectNovelImportDialog();
 
 const showUrlInput = computed(() => ctx.step.value === 'idle' || ctx.step.value === 'unsupported');
 const showPreview = computed(() => ctx.step.value === 'preview' && ctx.snapshot.value);

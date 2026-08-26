@@ -203,5 +203,8 @@ declare module 'vue' {
     TranslationProgressTablet: typeof import('./components/novel/TranslationProgressTablet.vue')['default']
     VolumesList: typeof import('./components/novel/VolumesList.vue')['default']
     VolumesListTablet: typeof import('./components/novel/VolumesListTablet.vue')['default']
+    WebBootstrap: typeof import('./components/web/WebBootstrap.vue')['default']
+    WebHeaderActions: typeof import('./components/layout/WebHeaderActions.vue')['default']
+    WebLoginPage: typeof import('./components/web/WebLoginPage.vue')['default']
   }
 }
