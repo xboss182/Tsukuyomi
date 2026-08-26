@@ -8,227 +8,233 @@
 
 <img width="192" height="192" alt="android-chrome-192x192" src="https://github.com/user-attachments/assets/80e77fc0-9aa6-4900-9b5f-7420672a12a4" />
 
-> 专为轻小说爱好者和译者打造的现代化 AI 辅助翻译工具。
+## Why This Fork
 
-**Tsukuyomi (月詠)** 是一个利用最先进 AI 模型（如 **GPT-5.2**, **Claude 4.6**, **Gemini 3 Pro** 等）进行外语文本（专为日本轻小说设计）阅读和翻译的综合平台。无论您是想快速阅读"生肉"的读者，还是追求"信达雅"专业水平的译者，Tsukuyomi 都能为您提供全方位的支持。
-
-- 可以直接访问网页版：[https://tsukuyomi.rozx.moe](https://tsukuyomi.rozx.moe/)
-- 或者查看最新的Release: [点击这里](https://github.com/rozx/Tsukuyomi/releases/latest)
-
-![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
-
-## ✨ 核心功能详情
-
-### 🤖 多模型 AI 矩阵
-
-Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模型：
-
-- **OpenAI**: 支持 **GPT-5.2**, **GPT-o1** (超强推理), **GPT-4o** (均衡全能)。
-- **Anthropic**: 支持 **Claude 4.6 Opus** (极高文学素养), **Claude 3.5 Sonnet** (极速响应)。
-- **Google**: 支持 **Gemini 3 Pro** (百万级上下文), **Gemini 2.0 Flash** (极高性价比)。
-- **DeepSeek**: 支持 **DeepSeek-V3**, **DeepSeek-R1** (逻辑与编码最强开源模型)。
-- **Moonshot**: 支持 **Kimi k2.5** (针对中文语境深度优化)。
-
-**最佳实践**:
-
-- 使用 **GPT-5.2** 或 **DeepSeek-R1** 进行初翻，处理复杂句式与暗喻。
-- 使用 **Claude 4.6 Opus** 或 **Gemini 3 Pro** 进行润色，通过超长上下文保持全书风格一致。
-
-### 📚 智能翻译与阅读
-
-深度定制的阅读环境，让翻译成为一种享受：
-
-- **沉浸式双语模式**: 左右分栏对照，支持段落级自动对齐与高亮，阅读体验极佳。
-- **全流程 AI 操作**:
-  - **初翻 (Translate)**: 考虑全书背景的精准翻译。
-  - **润色 (Polish)**: 消除"翻译腔"，让译文更符合中文地道表达。
-  - **校对 (Proofreading)**: 自动检查漏译、错别字及格式问题。
-- **多版本并存**: 对同一段落可尝试不同模型，一键切换各版本择优使用。
-- **实时进度监控**: 侧边栏显示详细的翻译进度、预计剩余时间及处理日志。
-
-### 🧩 深度上下文管理系统 (Context Engine)
-
-从底层解决 AI 翻译"记不住人名、吐字风格不统一"的顽疾：
-
-#### 1. 📖 术语表 (Glossary)
-
-- **精准替换**: 强制统一 **地名**、**技能名**、**特定名词** 的译法。
-- **语义引导**: 为术语添加描述，让 AI 理解其在故事中的具体作用。
-
-#### 2. 👥 角色设定 (Character Settings)
-
-- **多维属性**: 定义角色的 **性别**、**语气**、**口癖**、**性格特征**。
-- **别名识别**: 建立别名库，让 AI 明白"勇者"、"那个家伙"、"佐藤"指向的是同一个人。
-- **语气控制**: 自动调整对话风格（如傲娇、古风、极道等），让翻译更有灵魂。
-
-#### 3. 🧠 记忆库 (Memory Bank)
-
-- **世界观沉淀**: 记录复杂的势力关系、魔法系统规则、关键剧情伏笔。
-- **语义优先的记忆检索**: Embedding 可用时按语义相似度、关键词匹配和时间衰减自动评分（权重 0.85 / 0.10 / 0.05）；关闭或不可用时回退到关键词和时间衰减（0.75 / 0.25）。总分归一到 0–1.0，并按字符预算注入最相关记忆。
-- **本地语义嵌入（可选）**: 内置 `gte-multilingual-base` 多语言编码器（Transformers.js），通过 WebGPU + q4f16 运行，不支持时自动回退 WASM + q8。完全本地运行，不消耗 API 额度；默认关闭，需在"设置 → 本地嵌入"中手动启用，移动端受 WASM 内存限制强制禁用。
-- **混合搜索**: `search_memories` 工具支持自然语言查询，同时利用关键词匹配和语义向量排序；关闭嵌入时自动退化为关键词 + 时间衰减。
-
-#### 4. 📑 章节语义索引 (Chapter Vector Index)
-
-- **多向量章节索引**: 启用本地嵌入后，为每个章节按约 100 字的段落边界建立原生 768 维多向量索引，并额外为"章节标题 + 首段"写入专属向量，支持标题 / 系列 / 主题型查询。
-- **`query_chapter` 混合检索**: AI 可用自然语言跨章节搜索原文；先在章节粒度校准语义置信度并融合语义 / 关键词 RRF 排名，再按 `0.85 × 语义 + 0.15 × 关键词` 排序并过滤弱匹配。翻译、润色、校对、聊天助手四类任务的提示词已学会调用该工具获取前文上下文。
-- **批量管理**: 本地向量索引弹窗展示每本书的记录数，支持单书重建、批量重算、测试查询对话框。
-
-### 💬 AI 协作聊天助手
-
-您的侧边栏 24/7 翻译导师：
-
-- **实时协助**: 随时询问 "这句话的梗在哪？" 或 "这里怎么翻译才能保留原作者的俏皮感？"。
-- **自动化操控**: 直接通过对话修改书籍信息或增删术语，例如："帮我把这本书改成完结状态"。
-- **内置知识库**: 遇到软件使用问题，AI 会检索官方帮助文档为您解答。
-
-### ☁️ 数据同步与安全
-
-- **本地优先**: 数据存储在 IndexedDB 中，无需担心隐私泄露，离线亦可工作。
-- **Gist 云同步**: 配合 **GitHub Gist** 实现私有云备份，支持修订历史回溯，一键恢复至任意历史版本。
-- **Manifest 增量同步**: 基于 `manifest.json` + SHA-256 哈希，只上传变化的条目；下载使用 `If-None-Match` 条件 GET，远端无变化不消耗 API 配额。上传前伪 CAS 校验远端 ETag，多设备并发写入自动合并重试。
-- **跨端删除一致**: Manifest 使用墓碑（tombstones）传递删除语义，A 设备删除的条目不会被 B 设备重新推回。
-- **强制推送模式**: 设备迁移或远端损坏时可一键以本地数据覆盖远端，安全可控。
-
-### 📱 全设备适配
-
-- **桌面 / 平板 / 移动**: Dispatcher + 三变体架构，桌面保持信息密度、平板提供双面板阅读与可停靠 AI 助手、移动端采用底部 Tab 栏 + BottomSheet 的原生化体验。
-- **Electron 桌面版**: 一套代码同时打包 Web SPA 与跨平台桌面客户端，桌面端强制使用 Desktop 变体。
-
-## 📸 界面预览
-
-自 v0.10.1 起，所有页面在桌面 / 平板 / 手机上都有专属模板（而不是简单拉伸）。以下为各设备的实际运行截图。
-
-### 🏠 首页 · Dashboard
-
-![桌面首页](public/screenshots/desktop-index.png)
-
-|                                 平板 · Tablet                                 |                                 手机 · Mobile                                 |
-| :---------------------------------------------------------------------------: | :---------------------------------------------------------------------------: |
-| <img src="public/screenshots/tablet-index.png" alt="平板首页" width="100%" /> | <img src="public/screenshots/mobile-index.png" alt="手机首页" width="100%" /> |
-
-### 📚 书库 · Library
-
-![桌面书库](public/screenshots/desktop-library.png)
-
-|                                  平板 · Tablet                                  |                                  手机 · Mobile                                  |
-| :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
-| <img src="public/screenshots/tablet-library.png" alt="平板书库" width="100%" /> | <img src="public/screenshots/mobile-library.png" alt="手机书库" width="100%" /> |
-
-### 📖 书籍详情 / 阅读器 · Book Details & Reader
-
-> 桌面与平板采用双面板布局，将章节树、元数据、段落阅读合并为同一视图；手机端则拆分为独立页面以适配竖屏空间。
-
-![桌面书籍详情](public/screenshots/desktop-book-details.png)
-
-|                                      平板 · Tablet                                       |                                     手机 (书籍详情)                                      |                                  手机 (阅读器)                                   |
-| :--------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------: |
-| <img src="public/screenshots/tablet-book-details.png" alt="平板书籍详情" width="100%" /> | <img src="public/screenshots/mobile-book-details.png" alt="手机书籍详情" width="100%" /> | <img src="public/screenshots/mobile-reader.png" alt="手机阅读器" width="100%" /> |
-
-### 💬 AI 助手协作 · Reader + Chat Workspace
-
-右侧面板可停靠，随时召唤 AI 助手；启用本地嵌入后可使用 `query_chapter` / `search_memories` 工具跨章节、跨记忆检索上下文。
-
-![桌面阅读器 + AI 助手](public/screenshots/desktop-reader-with-chat.png)
-
-|                                            平板 · Tablet                                             |                                        手机 · Mobile                                         |
-| :--------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------: |
-| <img src="public/screenshots/tablet-reader-with-chat.png" alt="平板阅读器 + AI 助手" width="100%" /> | <img src="public/screenshots/mobile-reader-with-chat.png" alt="手机 AI 助手" width="100%" /> |
-
-### 🤖 AI 模型管理 · Model Management
-
-![桌面 AI 模型](public/screenshots/desktop-ai-models.png)
-
-|                                     平板 · Tablet                                     |                                     手机 · Mobile                                     |
-| :-----------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
-| <img src="public/screenshots/tablet-ai-models.png" alt="平板 AI 模型" width="100%" /> | <img src="public/screenshots/mobile-ai-models.png" alt="手机 AI 模型" width="100%" /> |
-
-## 🔒 隐私与数据主权
-
-Tsukuyomi 从架构设计起便把"数据属于你"作为第一原则：
-
-- **本地优先架构**: 所有书籍、翻译、术语、记忆与配置默认存储在浏览器 IndexedDB（或 Electron 桌面版的本地磁盘），**完全离线可用**。
-- **BYOK（Bring Your Own Key）**: API Key 只在本地保存，请求直连 AI 厂商（或你自选的 CORS 代理 / 网关），不经过任何第三方中继。
-- **本地语义嵌入**: 启用"本地嵌入"后，记忆库与章节语义索引使用 Transformers.js 在浏览器 / Electron 内部运行，**不上传任何文本到外部嵌入服务**；模型文件下载后自动缓存到浏览器 Cache Storage。
-- **可选 Gist 云同步**: 云备份仅写入你自己的私有 GitHub Gist，基于 Manifest + SHA-256 哈希的条件 GET 最小化流量，Token 本地加密保存；关闭同步即可完全脱网使用。
-- **无追踪 · 无埋点**: 不收集使用数据，不接入任何统计或广告 SDK。
-
-## 🚀 快速开始
-
-### 1. 安装与运行
-
-本项目基于 [Bun](https://bun.sh) 构建：
-
-```bash
-# 克隆仓库并进入
-git clone https://github.com/rozx/Tsukuyomi.git
-cd Tsukuyomi
-
-# 安装依赖
-bun install
-
-# 开启开发环境
-bun run dev
-```
-
-### 2. 快捷导入指南
-
-- **自动抓取**: 支持从 `kakuyomu.jp`, `ncode.syosetu.com`（元数据）, `nobadnovel.com`, `freewebnovel.com`, `novellunar.com` 一键导入；详见 [docs/SCRAPER.md](docs/SCRAPER.md)。
-- **JSON 导入**: 支持导入其他译者分享的翻译包或备份文件。
-
-## 📖 文档索引
-
-| 文档类别     | 详细指南 (位于 `public/help`)                                                                                                                                |
-| :----------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **基础配置** | [快速开始](public/help/front-page.md) \| [AI 模型配置](public/help/ai-models-guide.md) \| [设置与同步](public/help/settings-guide.md)                        |
-| **书籍管理** | [图书馆介绍](public/help/library-guide.md) \| [导入与抓取](public/help/books-page-guide.md) \| [章节管理](public/help/book-details-chapters.md)              |
-| **翻译实战** | [翻译功能面板](public/help/book-details-translation.md) \| [三种编辑模式](public/help/book-details-editing.md) \| [工具栏详解](public/help/toolbar-guide.md) |
-| **核心逻辑** | [术语管理](public/help/book-details-terminology.md) \| [角色设定](public/help/book-details-characters.md) \| [记忆系统](public/help/book-details-memory.md)  |
-| **进阶工具** | [聊天助手实战](public/help/chat-assistant-guide.md)                                                                                                          |
-
-> 📖 **在线文档**: 完整的帮助文档已同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)，提供更好的浏览体验。
-
-## 🧱 技术栈
-
-| 层级              | 技术                                                                                                                  |
-| :---------------- | :-------------------------------------------------------------------------------------------------------------------- |
-| **前端框架**      | Vue 3.5 · Quasar 2.18 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
-| **桌面封装**      | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                              |
-| **运行时 / 构建** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
-| **AI SDK**        | OpenAI SDK · Google Generative AI · 自定义 Claude 集成 · Moonshot Kimi 等兼容 OpenAI 协议的模型（BYOK）               |
-| **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · WebGPU + q4f16（优先）/ WASM + q8（回退）              |
-| **存储 / 同步**   | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                |
-| **抓取**          | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ HTTP 代理轮询（Web 版）                              |
-| **测试**          | Bun test · fake-indexeddb                                                                                             |
-
-## 🛠️ 开发与构建
-
-| 命令                     | 用途                                      |
-| :----------------------- | :---------------------------------------- |
-| `bun install`            | 安装依赖                                  |
-| `bun run dev`            | 启动 Web 开发模式（前端:9000, 后端:8080） |
-| `bun run dev:electron`   | 启动 Electron 开发模式                    |
-| `bun run build:spa`      | 构建生产环境 Web SPA                      |
-| `bun run build:electron` | 打包跨平台桌面客户端 (dmg/exe/deb)        |
-| `bun run lint`           | 代码规范性检测                            |
-| `bun run type-check`     | TypeScript 类型检查                       |
-| `bun test`               | 运行测试套件                              |
-| `bun run bump`           | 手动/自动更新版本号                       |
-
-**开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [抓取器指南](docs/SCRAPER.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
-
-## 🤝 贡献
-
-欢迎 Issue、PR、以及翻译器使用反馈。提交代码前请：
-
-1. `bun run lint && bun run type-check` 通过本地检查；
-2. 新增功能请配套写测试（`src/__tests__/`）；
-3. UI 改动需在桌面 / 平板 / 手机三个断点手动验证，遵循 `CLAUDE.md` 的"设备变体规则"。
-
-## 📄 许可证
-
-[Apache License 2.0](LICENSE) — 可自由用于个人与商业用途，请在二次分发时保留版权声明。
+This is a personal fork of [rozx/Tsukuyomi](https://github.com/rozx/Tsukuyomi) focused on building a **curated personal novel library with a built-in web scraper**. The goal is a richer, more intentional reading and collection experience — hand-picked novels, deeper word-level tooling, and tighter scraper integration for importing from the sources I actually use. Where the upstream project is a general-purpose AI translation platform, this fork leans into the library and discovery side: curated shelves, expanded vocabulary context, and a scraper workflow tuned for personal use.
 
 ---
 
-> _Tsukuyomi - 让每一次翻页都如月光般流畅。_
+> A modern AI-assisted translation tool built for light novel readers and translators.
+
+**Tsukuyomi (月詠)** is a comprehensive platform for reading and translating foreign-language text — designed specifically for Japanese light novels — powered by state-of-the-art AI models such as **GPT-5.2**, **Claude 4.6**, **Gemini 3 Pro**, and more. Whether you want to read raw Japanese quickly or produce polished, publication-quality translations, Tsukuyomi covers the full workflow.
+
+- Web version: [https://tsukuyomi.rozx.moe](https://tsukuyomi.rozx.moe/)
+- Latest release: [click here](https://github.com/rozx/Tsukuyomi/releases/latest)
+
+![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
+
+## ✨ Core Features
+
+### 🤖 Multi-Model AI Matrix
+
+Tsukuyomi uses a "Bring Your Own Key" model, giving you direct access to the world's leading AI models:
+
+- **OpenAI**: GPT-5.2, GPT-o1 (advanced reasoning), GPT-4o (balanced, all-purpose).
+- **Anthropic**: Claude 4.6 Opus (exceptional literary quality), Claude 3.5 Sonnet (fast responses).
+- **Google**: Gemini 3 Pro (million-token context), Gemini 2.0 Flash (best cost/performance ratio).
+- **DeepSeek**: DeepSeek-V3, DeepSeek-R1 (top open-source models for logic and code).
+- **Moonshot**: Kimi k2.5 (deeply optimised for Chinese-language contexts).
+
+**Best practices**:
+
+- Use **GPT-5.2** or **DeepSeek-R1** for first-pass translation to handle complex sentences and metaphors.
+- Use **Claude 4.6 Opus** or **Gemini 3 Pro** for polishing, leveraging their long context to keep the style consistent across the whole book.
+
+### 📚 Smart Translation & Reading
+
+A deeply customised reading environment that makes translation enjoyable:
+
+- **Immersive bilingual mode**: Side-by-side comparison with automatic paragraph-level alignment and highlighting.
+- **Full-pipeline AI operations**:
+  - **Translate**: Precise translation that accounts for the full book's context.
+  - **Polish**: Removes "translationese" so the target text reads naturally.
+  - **Proofread**: Automatically catches omissions, typos, and formatting issues.
+- **Multi-version comparison**: Try different models on the same paragraph and switch between results.
+- **Real-time progress monitoring**: Sidebar shows translation progress, estimated time remaining, and processing logs.
+
+### 🧩 Deep Context Management System (Context Engine)
+
+Solves the root cause of AI translation inconsistencies — forgotten character names, shifting tone — at the architecture level:
+
+#### 1. 📖 Glossary
+
+- **Precise substitution**: Enforces consistent translations for place names, skill names, and specific terms.
+- **Semantic guidance**: Add descriptions so the AI understands each term's role in the story.
+
+#### 2. 👥 Character Settings
+
+- **Multi-dimensional attributes**: Define a character's gender, tone, speech quirks, and personality traits.
+- **Alias recognition**: Build an alias library so the AI knows "the hero", "that guy", and "Satou" are all the same person.
+- **Tone control**: Automatically adjusts dialogue style (tsundere, classical, yakuza-speech, etc.) to give each character a distinct voice.
+
+#### 3. 🧠 Memory Bank
+
+- **World-building persistence**: Records faction relationships, magic system rules, and key plot threads.
+- **Semantics-first memory retrieval**: When embeddings are enabled, memories are scored by semantic similarity, keyword match, and time decay (weights 0.85 / 0.10 / 0.05). When disabled or unavailable, falls back to keyword + time decay (0.75 / 0.25). Scores are normalised to 0–1.0 and the most relevant memories are injected within a character budget.
+- **Local semantic embeddings (optional)**: Built-in `gte-multilingual-base` multilingual encoder (Transformers.js), running via WebGPU + q4f16 with automatic fallback to WASM + q8. Runs entirely locally; does not consume API quota. Disabled by default — enable under Settings → Local Embeddings. Forced off on mobile due to WASM memory limits.
+- **Hybrid search**: The `search_memories` tool supports natural-language queries using both keyword matching and semantic vector ranking; automatically degrades to keyword + time decay when embeddings are off.
+
+#### 4. 📑 Chapter Semantic Index
+
+- **Multi-vector chapter index**: When local embeddings are enabled, each chapter is indexed with ~100-character paragraph boundaries into native 768-dimensional multi-vector indexes, plus a dedicated vector for "chapter title + first paragraph" to support title/series/theme queries.
+- **`query_chapter` hybrid retrieval**: The AI can search across chapters in natural language. Semantic confidence is calibrated at chapter granularity, semantic/keyword RRF rankings are fused, and results are sorted by `0.85 × semantic + 0.15 × keyword` with weak matches filtered out. Translate, polish, proofread, and chat assistant tasks all know how to call this tool for cross-chapter context.
+- **Bulk management**: The local vector index panel shows record counts per book and supports single-book rebuild, bulk recalculation, and a test-query dialog.
+
+### 💬 AI Collaboration Chat Assistant
+
+Your 24/7 translation mentor in the sidebar:
+
+- **Real-time assistance**: Ask "What's the cultural reference here?" or "How do I keep the author's wit in this line?" at any point.
+- **Automated control**: Modify book metadata or add/remove glossary terms directly through conversation — e.g. "Mark this book as complete."
+- **Built-in knowledge base**: For questions about the software itself, the AI searches the official help docs to answer you.
+
+### ☁️ Data Sync & Security
+
+- **Local-first**: Data is stored in IndexedDB — no privacy concerns, works fully offline.
+- **Gist cloud sync**: Pairs with **GitHub Gist** for private cloud backup with revision history; restore to any historical version in one click.
+- **Manifest incremental sync**: Uses `manifest.json` + SHA-256 hashes to upload only changed entries; downloads use `If-None-Match` conditional GET so unchanged remote data doesn't consume API quota. Pre-upload pseudo-CAS checks the remote ETag, with automatic merge-and-retry for concurrent multi-device writes.
+- **Cross-device delete consistency**: The manifest uses tombstones to propagate deletions, so an entry deleted on device A won't be pushed back by device B.
+- **Force-push mode**: When migrating devices or recovering a corrupted remote, overwrite the remote with local data in one click.
+
+### 📱 Full Device Support
+
+- **Desktop / Tablet / Mobile**: Dispatcher + three-variant architecture. Desktop maximises information density; tablet provides dual-panel reading with a dockable AI assistant; mobile uses a native-feeling bottom tab bar + BottomSheet layout.
+- **Electron desktop app**: A single codebase ships both a Web SPA and a cross-platform desktop client; the desktop build forces the Desktop variant.
+
+## 📸 Screenshots
+
+Since v0.10.1 every page has a dedicated template for desktop, tablet, and mobile (not just a stretched layout). Screenshots below are from live builds.
+
+### 🏠 Home · Dashboard
+
+![Desktop Home](public/screenshots/desktop-index.png)
+
+|                                 Tablet                                 |                                 Mobile                                 |
+| :---------------------------------------------------------------------: | :---------------------------------------------------------------------: |
+| <img src="public/screenshots/tablet-index.png" alt="Tablet Home" width="100%" /> | <img src="public/screenshots/mobile-index.png" alt="Mobile Home" width="100%" /> |
+
+### 📚 Library
+
+![Desktop Library](public/screenshots/desktop-library.png)
+
+|                                  Tablet                                  |                                  Mobile                                  |
+| :-----------------------------------------------------------------------: | :-----------------------------------------------------------------------: |
+| <img src="public/screenshots/tablet-library.png" alt="Tablet Library" width="100%" /> | <img src="public/screenshots/mobile-library.png" alt="Mobile Library" width="100%" /> |
+
+### 📖 Book Details & Reader
+
+> Desktop and tablet use a dual-panel layout combining the chapter tree, metadata, and paragraph reader into one view; mobile splits these into separate screens to fit portrait space.
+
+![Desktop Book Details](public/screenshots/desktop-book-details.png)
+
+|                                      Tablet                                       |                                     Mobile (Book Details)                                      |                                  Mobile (Reader)                                   |
+| :--------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------: |
+| <img src="public/screenshots/tablet-book-details.png" alt="Tablet Book Details" width="100%" /> | <img src="public/screenshots/mobile-book-details.png" alt="Mobile Book Details" width="100%" /> | <img src="public/screenshots/mobile-reader.png" alt="Mobile Reader" width="100%" /> |
+
+### 💬 AI Assistant · Reader + Chat Workspace
+
+The right panel is dockable — summon the AI assistant at any time. With local embeddings enabled, `query_chapter` / `search_memories` tools allow cross-chapter and cross-memory context retrieval.
+
+![Desktop Reader + AI Assistant](public/screenshots/desktop-reader-with-chat.png)
+
+|                                            Tablet                                             |                                        Mobile                                         |
+| :-------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------: |
+| <img src="public/screenshots/tablet-reader-with-chat.png" alt="Tablet Reader + AI Assistant" width="100%" /> | <img src="public/screenshots/mobile-reader-with-chat.png" alt="Mobile AI Assistant" width="100%" /> |
+
+### 🤖 AI Model Management
+
+![Desktop AI Models](public/screenshots/desktop-ai-models.png)
+
+|                                     Tablet                                     |                                     Mobile                                     |
+| :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
+| <img src="public/screenshots/tablet-ai-models.png" alt="Tablet AI Models" width="100%" /> | <img src="public/screenshots/mobile-ai-models.png" alt="Mobile AI Models" width="100%" /> |
+
+## 🔒 Privacy & Data Sovereignty
+
+Tsukuyomi is built from the ground up on the principle that your data belongs to you:
+
+- **Local-first architecture**: All books, translations, glossaries, memories, and settings are stored by default in the browser's IndexedDB (or on local disk in the Electron desktop app). **Fully usable offline.**
+- **BYOK (Bring Your Own Key)**: API keys are stored only locally; requests go directly to the AI provider (or your own CORS proxy / gateway) — no third-party relay.
+- **Local semantic embeddings**: When "Local Embeddings" is enabled, the memory bank and chapter semantic index run Transformers.js entirely inside the browser / Electron process. **No text is uploaded to any external embedding service.** Model files are downloaded once and cached in the browser's Cache Storage.
+- **Optional Gist cloud sync**: Cloud backup writes only to your own private GitHub Gist. Manifest + SHA-256 conditional GET minimises traffic; the token is stored encrypted locally. Disable sync to go fully offline.
+- **No tracking · No analytics**: No usage data is collected; no statistics or advertising SDKs are included.
+
+## 🚀 Quick Start
+
+### 1. Install & Run
+
+This project is built on [Bun](https://bun.sh):
+
+```bash
+# Clone and enter the repo
+git clone https://github.com/xboss182/Tsukuyomi.git
+cd Tsukuyomi
+
+# Install dependencies
+bun install
+
+# Start the development server
+bun run dev
+```
+
+### 2. Import Guide
+
+- **Auto-scrape**: One-click import from `kakuyomu.jp`, `ncode.syosetu.com` (metadata), `nobadnovel.com`, `freewebnovel.com`, `novellunar.com` — see [docs/SCRAPER.md](docs/SCRAPER.md).
+- **JSON import**: Import translation packages or backup files shared by other translators.
+
+## 📖 Documentation Index
+
+| Category | Guides (under `public/help`) |
+| :------- | :--------------------------- |
+| **Setup** | [Quick Start](public/help/front-page.md) \| [AI Model Config](public/help/ai-models-guide.md) \| [Settings & Sync](public/help/settings-guide.md) |
+| **Library** | [Library Overview](public/help/library-guide.md) \| [Import & Scrape](public/help/books-page-guide.md) \| [Chapter Management](public/help/book-details-chapters.md) |
+| **Translation** | [Translation Panel](public/help/book-details-translation.md) \| [Three Editing Modes](public/help/book-details-editing.md) \| [Toolbar Guide](public/help/toolbar-guide.md) |
+| **Core Logic** | [Glossary](public/help/book-details-terminology.md) \| [Character Settings](public/help/book-details-characters.md) \| [Memory System](public/help/book-details-memory.md) |
+| **Advanced** | [Chat Assistant](public/help/chat-assistant-guide.md) |
+
+> 📖 **Online docs**: The full help documentation is also available on the [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki).
+
+## 🧱 Tech Stack
+
+| Layer | Technology |
+| :---- | :--------- |
+| **Frontend** | Vue 3.5 · Quasar 2.18 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
+| **Desktop** | Electron 39 (Web SPA and desktop share one codebase; `useDeviceVariant` forces the Desktop variant) |
+| **Runtime / Build** | Bun ≥ 1.0 · Vite · Quasar CLI |
+| **AI SDK** | OpenAI SDK · Google Generative AI · Custom Claude integration · Moonshot Kimi and other OpenAI-compatible models (BYOK) |
+| **Local Embeddings** | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · WebGPU + q4f16 (preferred) / WASM + q8 (fallback) |
+| **Storage / Sync** | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 hash manifest · Conditional GET + pseudo-CAS concurrency protection |
+| **Scraper** | Puppeteer + `puppeteer-extra-plugin-stealth` (Electron desktop) / HTTP proxy polling (web) |
+| **Testing** | Bun test · fake-indexeddb |
+
+## 🛠️ Development & Build
+
+| Command | Purpose |
+| :------ | :------ |
+| `bun install` | Install dependencies |
+| `bun run dev` | Start web dev mode (frontend :9000, backend :8080) |
+| `bun run dev:electron` | Start Electron dev mode |
+| `bun run build:spa` | Build production Web SPA |
+| `bun run build:electron` | Package cross-platform desktop client (dmg/exe/deb) |
+| `bun run lint` | Run ESLint |
+| `bun run type-check` | TypeScript type check |
+| `bun test` | Run test suite |
+| `bun run bump` | Bump version number |
+
+**Developer docs**: [Build Troubleshooting](docs/BUILD_TROUBLESHOOTING.md) \| [Theme Guide](docs/THEME_GUIDE.md) \| [Translation Guide](docs/TRANSLATION_GUIDE.md) \| [Wiki Sync](docs/WIKI_SYNC.md) \| [Scraper Guide](docs/SCRAPER.md) \| [Contributor Guide](AGENTS.md) \| [Project Conventions (Claude Code)](CLAUDE.md)
+
+## 🤝 Contributing
+
+Issues, PRs, and translator feedback are all welcome. Before submitting code:
+
+1. `bun run lint && bun run type-check` must pass locally.
+2. New features should include tests in `src/__tests__/`.
+3. UI changes must be manually verified at desktop, tablet, and mobile breakpoints, following the "device variant rules" in `CLAUDE.md`.
+
+## 📄 License
+
+[Apache License 2.0](LICENSE) — free for personal and commercial use; please retain the copyright notice in any redistribution.
+
+---
+
+> _Tsukuyomi — where every page turn flows like moonlight._
