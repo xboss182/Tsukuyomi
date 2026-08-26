@@ -3,6 +3,26 @@
 export default {
   failed: '操作失敗',
   success: '操作成功',
+  webAuth: {
+    subtitle: '輸入存取密碼以繼續使用',
+    passwordLabel: '存取密碼',
+    passwordPlaceholder: '存取密碼',
+    login: '登入',
+    logout: '登出',
+    showPassword: '顯示密碼',
+    hidePassword: '隱藏密碼',
+    verifyingSession: '正在驗證工作階段',
+    passwordRequired: '請輸入密碼',
+    loginFailed: '登入失敗',
+    sessionExpired: '工作階段已過期，請重新登入',
+  },
+  quickStartGuide: {
+    title: '快速開始指南',
+    eyebrow: 'GUIDE',
+    loading: '正在載入快速開始指南...',
+    loadFailed: '無法載入快速開始指南，請稍後重試。',
+    dismiss: '我知道了，不再提示',
+  },
   memoryInjection: {
     tabTitle: '記憶注入',
     charBudget: '記憶注入字元預算',

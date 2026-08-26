@@ -3,6 +3,26 @@
 export default {
   failed: '操作失败',
   success: '操作成功',
+  webAuth: {
+    subtitle: '输入访问密码以继续使用',
+    passwordLabel: '访问密码',
+    passwordPlaceholder: '访问密码',
+    login: '登录',
+    logout: '退出',
+    showPassword: '显示密码',
+    hidePassword: '隐藏密码',
+    verifyingSession: '正在验证会话',
+    passwordRequired: '请输入密码',
+    loginFailed: '登录失败',
+    sessionExpired: '会话已过期，请重新登录',
+  },
+  quickStartGuide: {
+    title: '快速开始指南',
+    eyebrow: 'GUIDE',
+    loading: '正在加载快速开始指南...',
+    loadFailed: '无法加载快速开始指南，请稍后重试。',
+    dismiss: '我知道了，不再提示',
+  },
   memoryInjection: {
     tabTitle: '记忆注入',
     charBudget: '记忆注入字符预算',

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
+import { createI18n } from 'vue-i18n';
 import type { ImportJob } from 'src/models/importer';
 import {
   createWebNovelImportContext,
@@ -11,6 +12,9 @@ import {
 import WebBootstrap from 'src/components/web/WebBootstrap.vue';
 import { WebLibraryApi } from 'src/services/web-library-api';
 import { setWebClientSessionExpiredHandler } from 'src/services/web-client';
+import messages from 'src/i18n';
+
+const i18n = createI18n({ locale: 'en-US', fallbackLocale: 'en-US', legacy: false, messages });
 
 const sse = vi.hoisted(() => ({
   handler: null as ((event: { name: string; data: unknown }) => void) | null,
@@ -154,8 +158,8 @@ describe('useWebApp auth', () => {
         return () => h(WebBootstrap, null, { default: () => h('span', 'private library') });
       },
     });
-    const wrapper = mount(Host, { global: { stubs: { WebLoginPage: true } } });
-    expect(wrapper.text()).toContain('正在验证会话');
+    const wrapper = mount(Host, { global: { plugins: [i18n], stubs: { WebLoginPage: true } } });
+    expect(wrapper.text()).toContain('Verifying session');
     expect(wrapper.text()).not.toContain('private library');
     wrapper.unmount();
   });

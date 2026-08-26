@@ -1,17 +1,17 @@
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="快速开始指南"
+    :header="t('quickStartGuide.title')"
     desktop-width="min(960px, 92vw)"
     desktop-height="90vh"
-    eyebrow="GUIDE"
+    :eyebrow="t('quickStartGuide.eyebrow')"
     dialog-class="quick-start-dialog"
     @update:visible="handleVisibleChange"
   >
     <div class="quick-start-content">
       <div v-if="loading" class="state-box">
         <i class="pi pi-spin pi-spinner text-primary text-xl"></i>
-        <span class="text-moon/80">正在加载快速开始指南...</span>
+        <span class="text-moon/80">{{ t('quickStartGuide.loading') }}</span>
       </div>
       <div v-else-if="error" class="state-box state-error">
         <i class="pi pi-exclamation-triangle text-red-400 text-xl"></i>
@@ -22,7 +22,7 @@
 
     <template #footer>
       <Button
-        label="我知道了，不再提示"
+        :label="t('quickStartGuide.dismiss')"
         icon="pi pi-check"
         @click="handleDismiss"
       />
@@ -32,11 +32,14 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { getAssetUrl } from 'src/utils/assets';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -69,7 +72,7 @@ const loadGuideContent = async (): Promise<void> => {
     hasLoadedContent.value = true;
   } catch (loadError) {
     console.error('Failed to load quick start guide:', loadError);
-    error.value = '无法加载快速开始指南，请稍后重试。';
+    error.value = t('quickStartGuide.loadFailed');
   } finally {
     loading.value = false;
   }
