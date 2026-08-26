@@ -2,7 +2,6 @@ import { isElectron } from 'src/utils/platform';
 import { provideNovelImport, injectNovelImport } from 'src/composables/novel-import/useNovelImport';
 import { provideWebNovelImport, injectWebNovelImport } from 'src/composables/web-app/useWebApp';
 import type { NovelImportContext } from 'src/composables/novel-import/useNovelImport';
-import type { WebNovelImportContext } from 'src/composables/web-app/useWebApp';
 
 /**
  * Runtime-agnostic novel import context.
@@ -11,18 +10,13 @@ import type { WebNovelImportContext } from 'src/composables/web-app/useWebApp';
  * web-server context. Components can keep using `useNovelImport()`; only the
  * root browser entry needs to provide the web variant first.
  */
-export function provideAdaptiveNovelImport():
-  | NovelImportContext
-  | WebNovelImportContext {
+export function provideAdaptiveNovelImport(): NovelImportContext {
   if (isElectron()) {
     return provideNovelImport();
   }
   return provideWebNovelImport();
 }
 
-export function injectAdaptiveNovelImport():
-  | NovelImportContext
-  | WebNovelImportContext
-  | null {
+export function injectAdaptiveNovelImport(): NovelImportContext | null {
   return isElectron() ? injectNovelImport() : injectWebNovelImport();
 }
