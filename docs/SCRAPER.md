@@ -215,6 +215,12 @@ atomic IndexedDB transaction across all four stores.
 
 No credentials are included in the backup.
 
+## Scraping Providers (API Keys)
+
+Some sites require routing requests through a third-party scraping provider to bypass bot-detection. FreeWebNovel always uses this path; NoBadNovel and NovelLunar fall back to it when a direct request is blocked.
+
+See **[docs/PROVIDERS.md](PROVIDERS.md)** for the full guide: supported providers (Scrape.do, ScrapingAnt, ZenRows, Zyte), how to add API keys in Settings, cost tracking, and troubleshooting.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Resolution |
