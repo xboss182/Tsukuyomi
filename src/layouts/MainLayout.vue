@@ -13,6 +13,7 @@ import { useMainLayoutShell } from 'src/composables/main-layout/useMainLayoutShe
 import MainLayoutDesktop from './main-layout/MainLayoutDesktop.vue';
 import MainLayoutTablet from './main-layout/MainLayoutTablet.vue';
 import MainLayoutMobile from './main-layout/MainLayoutMobile.vue';
+import WebBootstrap from 'src/components/web/WebBootstrap.vue';
 import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
 import QuickStartGuideDialog from 'src/components/dialogs/QuickStartGuideDialog.vue';
 import Toast from 'primevue/toast';
@@ -35,7 +36,9 @@ const variantComponent = computed(() => {
 </script>
 
 <template>
-  <component :is="variantComponent" />
+  <WebBootstrap>
+    <component :is="variantComponent" />
+  </WebBootstrap>
 
   <!-- Global chrome — same across every variant, rendered once by the dispatcher -->
   <Toast position="top-right" @close="handleToastClose" />

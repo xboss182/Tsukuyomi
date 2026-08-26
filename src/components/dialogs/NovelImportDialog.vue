@@ -5,7 +5,7 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
-import { injectNovelImport } from 'src/composables/novel-import/useNovelImport';
+import { injectNovelImportDialog } from 'src/composables/novel-import/useNovelImportDialog';
 import NovelImportDialogBody from './NovelImportDialogBody.vue';
 import type { RemoteChapterStub } from 'src/models/importer';
 
@@ -17,7 +17,7 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
 }>();
 
-const ctx = injectNovelImport();
+const ctx = injectNovelImportDialog();
 
 const dialogVisible = computed({
   get: () => props.visible,

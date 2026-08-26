@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
+import { isElectron } from 'src/utils/platform';
 import { migrateFromLocalStorage, isDbBlocked } from 'src/utils/indexed-db';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -13,7 +14,7 @@ import { useContextStore } from 'src/stores/context';
 import { useElectronSettings } from 'src/composables/useElectronSettings';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { ImportJobService } from 'src/services/importer/import-job-service';
-import { isElectron } from 'src/utils/platform';
+import { provideWebAuth, provideWebLibrary } from 'src/composables/web-app/useWebApp';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -24,6 +25,12 @@ const bookDetailsStore = useBookDetailsStore();
 const uiStore = useUiStore();
 const aiProcessingStore = useAIProcessingStore();
 const contextStore = useContextStore();
+
+// Browser deployments authenticate against the same-origin backend.
+if (!isElectron()) {
+  provideWebAuth();
+  provideWebLibrary();
+}
 
 // 初始化 Electron 设置处理
 useElectronSettings();
@@ -76,8 +83,6 @@ onMounted(async () => {
   contextStore.loadState();
 
   // 全局监听 embedding 模型就绪事件,持久化"已缓存"标记
-  // 无论用户通过哪条路径触发加载（设置页下载、记忆面板重新向量化、章节 backfill 等）
-  // 都会被此监听器捕获,保证下次启动时 MainLayout 能自动 warmup
   const { EmbeddingService } = await import('src/services/embedding-service');
   EmbeddingService.addEventListener('ready', () => {
     if (settingsStore.settings.memoryInjection?.embeddingModelCached !== true) {

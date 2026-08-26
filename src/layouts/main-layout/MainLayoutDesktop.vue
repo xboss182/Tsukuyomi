@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import AppHeader from 'src/components/layout/AppHeader.vue';
+import WebHeaderActions from 'src/components/layout/WebHeaderActions.vue';
+import { isElectron } from 'src/utils/platform';
 import AppFooter from 'src/components/layout/AppFooter.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
@@ -12,6 +14,7 @@ const ui = useUiStore();
 <template>
   <div class="desktop-shell bg-tsukuyomi-sky">
     <AppHeader />
+    <WebHeaderActions v-if="!isElectron()" />
 
     <div class="desktop-shell-body">
       <div

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Checkbox from 'primevue/checkbox';
-import { injectNovelImport } from 'src/composables/novel-import/useNovelImport';
+import { injectNovelImportDialog } from 'src/composables/novel-import/useNovelImportDialog';
 
-const ctx = injectNovelImport();
+const ctx = injectNovelImportDialog();
 const chapters = computed(() => ctx.snapshot.value?.chapters ?? []);
 
 function chapterLabel(chapter: { title: string }): string {

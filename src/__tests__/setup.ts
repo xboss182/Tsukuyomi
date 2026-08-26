@@ -26,6 +26,11 @@ if (typeof (globalThis as any).IDBRequest === 'undefined') {
 beforeEach(async () => {
   await __resetDbPromiseForTesting();
   await resetDbForTests();
+  // Re-apply Electron polyfill unless a test intentionally removed it.
+  const win = window as unknown as { electronAPI?: { isElectron: boolean } };
+  if (!win.electronAPI) {
+    win.electronAPI = { isElectron: true };
+  }
 });
 
 import { installLocalStoragePolyfill } from './local-storage-polyfill';

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { injectNovelImport } from 'src/composables/novel-import/useNovelImport';
+import { injectNovelImportDialog } from 'src/composables/novel-import/useNovelImportDialog';
 
-const ctx = injectNovelImport();
+const ctx = injectNovelImportDialog();
 </script>
 
 <template>
