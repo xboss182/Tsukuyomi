@@ -4,6 +4,26 @@
 export default {
   failed: 'Action failed',
   success: 'Action was successful',
+  webAuth: {
+    subtitle: 'Enter the access password to continue',
+    passwordLabel: 'Access password',
+    passwordPlaceholder: 'Access password',
+    login: 'Log in',
+    logout: 'Log out',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
+    verifyingSession: 'Verifying session',
+    passwordRequired: 'Please enter the password',
+    loginFailed: 'Login failed',
+    sessionExpired: 'Session expired, please log in again',
+  },
+  quickStartGuide: {
+    title: 'Quick Start Guide',
+    eyebrow: 'GUIDE',
+    loading: 'Loading quick start guide...',
+    loadFailed: 'Failed to load the quick start guide. Please try again later.',
+    dismiss: 'Got it, don\u2019t show again',
+  },
   memoryInjection: {
     tabTitle: 'Memory Injection',
     charBudget: 'Memory Injection Character Budget',

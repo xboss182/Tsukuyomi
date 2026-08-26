@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Password from 'primevue/password';
 import { injectWebAuth } from 'src/composables/web-app/useWebApp';
 
+const { t } = useI18n();
 const auth = injectWebAuth();
 const password = ref('');
 const showPassword = ref(false);
@@ -26,9 +28,9 @@ async function submit(): Promise<void> {
   <div class="web-login">
     <div class="web-login-card">
       <h1 class="web-login-title">Tsukuyomi</h1>
-      <p class="web-login-subtitle">输入访问密码以继续使用</p>
+      <p class="web-login-subtitle">{{ t('webAuth.subtitle') }}</p>
       <form class="web-login-form" @submit.prevent="submit">
-        <label for="web-login-password" class="sr-only">访问密码</label>
+        <label for="web-login-password" class="sr-only">{{ t('webAuth.passwordLabel') }}</label>
         <Password
           v-if="showPassword"
           id="web-login-password"
@@ -37,7 +39,7 @@ async function submit(): Promise<void> {
           input-class="w-full"
           toggle-mask
           :feedback="false"
-          placeholder="访问密码"
+          :placeholder="t('webAuth.passwordPlaceholder')"
           @keyup.enter="submit"
         />
         <InputText
@@ -46,12 +48,12 @@ async function submit(): Promise<void> {
           v-model="password"
           class="w-full"
           type="password"
-          placeholder="访问密码"
+          :placeholder="t('webAuth.passwordPlaceholder')"
           @keyup.enter="submit"
         />
         <Button
           type="submit"
-          label="登录"
+          :label="t('webAuth.login')"
           :loading="auth?.isLoading.value"
           :disabled="!password || auth?.isLoading.value"
           class="w-full"
@@ -65,7 +67,7 @@ async function submit(): Promise<void> {
         class="web-login-toggle"
         @click="showPassword = !showPassword"
       >
-        {{ showPassword ? '隐藏密码' : '显示密码' }}
+        {{ showPassword ? t('webAuth.hidePassword') : t('webAuth.showPassword') }}
       </button>
     </div>
   </div>
