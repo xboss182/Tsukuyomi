@@ -10,7 +10,23 @@
 
 ## Why This Fork
 
-This is a personal fork of [rozx/Tsukuyomi](https://github.com/rozx/Tsukuyomi) focused on building a **curated personal novel library with a built-in web scraper**. The goal is a richer, more intentional reading and collection experience — hand-picked novels, deeper word-level tooling, and tighter scraper integration for importing from the sources I actually use. Where the upstream project is a general-purpose AI translation platform, this fork leans into the library and discovery side: curated shelves, expanded vocabulary context, and a scraper workflow tuned for personal use.
+This is a personal fork of [rozx/Tsukuyomi](https://github.com/rozx/Tsukuyomi) focused on building a **curated personal novel library with a built-in web scraper**. Where the upstream project is a general-purpose AI translation platform, this fork leans into the library and discovery side: curated shelves, deeper word-level tooling, and a scraper workflow tuned for the sources I actually use.
+
+### What We Added
+
+- **Multi-source web scraper** — one-click import from five novel sites: `kakuyomu.jp`, `ncode.syosetu.com` (metadata), `nobadnovel.com`, `freewebnovel.com`, and `novellunar.com`. Powered by Puppeteer + stealth plugin on desktop and HTTP proxy polling on web.
+- **Scraper documentation** — full setup and usage guide at [`docs/SCRAPER.md`](docs/SCRAPER.md), covering per-site behaviour, authentication requirements, and troubleshooting.
+- **Curated library focus** — the UI and import workflow are tuned for personal collection management: hand-picked shelves, intentional imports, and a reading experience built around novels you actually want to finish.
+
+### How to Use the Scraper
+
+1. Open the app and go to **Library → Import**.
+2. Paste a novel URL from any supported site (see list above).
+3. Click **Auto-scrape** — the app fetches chapter list and metadata automatically.
+4. For Kakuyomu or ncode novels, authentication may be required; see [`docs/SCRAPER.md`](docs/SCRAPER.md) for site-specific steps.
+5. Once imported, the novel appears in your library ready for translation or reading.
+
+> For the full scraper reference — rate limits, proxy config, troubleshooting — see **[docs/SCRAPER.md](docs/SCRAPER.md)**.
 
 ---
 
