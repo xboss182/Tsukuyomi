@@ -173,7 +173,7 @@ bun run dev
 
 ### 2. 快捷导入指南
 
-- **自动抓取**: 支持从 `syosetu.com`, `kakuyomu.jp`, `syosetu.org` 等主流小说网一键导入。
+- **自动抓取**: 支持从 `kakuyomu.jp`, `ncode.syosetu.com`（元数据）, `nobadnovel.com`, `freewebnovel.com`, `novellunar.com` 一键导入；详见 [docs/SCRAPER.md](docs/SCRAPER.md)。
 - **JSON 导入**: 支持导入其他译者分享的翻译包或备份文件。
 
 ## 📖 文档索引
@@ -215,7 +215,7 @@ bun run dev
 | `bun test`               | 运行测试套件                              |
 | `bun run bump`           | 手动/自动更新版本号                       |
 
-**开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
+**开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [抓取器指南](docs/SCRAPER.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
 
 ## 🤝 贡献
 
