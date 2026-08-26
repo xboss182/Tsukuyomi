@@ -9,7 +9,7 @@ import {
   sessionCookieName,
   sessionDurationSeconds,
 } from './auth';
-import { openDatabase } from './database';
+import { isDatabaseReady, openDatabase } from './database';
 import { ImportJobRepository, ImportRepositoryError } from './import-repository';
 import type { JobEvent } from './import-repository';
 import { ServerImportWorker } from './import-worker';
@@ -284,7 +284,7 @@ export class ServerApplication {
       return json({ status: 'ok', version: this.options.version, commit: this.options.commit });
     }
     if (request.method === 'GET' && path.length === 1 && path[0] === 'readyz') {
-      if (!this.ready || this.closed) {
+      if (!this.ready || this.closed || !isDatabaseReady(this.database)) {
         throw failure('not_ready', 503, '服务尚未就绪', true);
       }
       return json({ status: 'ready', version: this.options.version, commit: this.options.commit });

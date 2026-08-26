@@ -52,6 +52,17 @@ describe('server application', () => {
     app.close();
   });
 
+  it('reports not ready when SQLite cannot run integrity validation', async () => {
+    const app = await createApplication();
+    app.database.close();
+
+    const response = await request(app, '/readyz');
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'not_ready' } });
+    app.close();
+  });
+
   it('rejects an oversized body before buffering it', async () => {
     const app = await createApplication();
     const oversized = new ReadableStream<Uint8Array>({

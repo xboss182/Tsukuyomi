@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDatabase } from '../database';
+import { isDatabaseReady, openDatabase } from '../database';
 
 const paths: string[] = [];
 
@@ -29,5 +29,15 @@ describe('openDatabase', () => {
     } finally {
       database.close();
     }
+  });
+});
+
+describe('isDatabaseReady', () => {
+  it('requires an ok integrity result and treats database errors as not ready', () => {
+    const corrupt = { query: () => ({ get: () => ({ integrity_check: 'corrupt' }) }) };
+    const unavailable = { query: () => { throw new Error('database is closed'); } };
+
+    expect(isDatabaseReady(corrupt as never)).toBeFalse();
+    expect(isDatabaseReady(unavailable as never)).toBeFalse();
   });
 });

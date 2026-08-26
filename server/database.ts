@@ -209,7 +209,12 @@ export function openDatabase(path: string): Database {
 }
 
 export function isDatabaseReady(database: Database): boolean {
-  return database.query('PRAGMA integrity_check').get() !== null;
+  try {
+    const result = database.query<{ integrity_check?: unknown }, []>('PRAGMA integrity_check').get();
+    return result?.integrity_check === 'ok';
+  } catch {
+    return false;
+  }
 }
 
 export function cleanExpiredJobEvents(database: Database, before: string): void {
