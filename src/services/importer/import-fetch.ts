@@ -3,13 +3,13 @@ import type { LookupAddress } from 'node:dns';
 import { request as httpsRequest } from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
 import type { LookupFunction, Socket } from 'node:net';
-import type { ImportError, ImportErrorCode, ImportFetchRequest, ImportFetchResult } from '../src/models/importer';
-import { toError } from '../src/utils/error-message';
+import type { ImportError, ImportErrorCode, ImportFetchRequest, ImportFetchResult } from 'src/models/importer';
+import { toError } from 'src/utils/error-message';
 import {
   isIpLiteralHost,
   isPublicIpAddress,
   normalizeIpAddress,
-} from '../src/services/importer/address-policy';
+} from './address-policy';
 
 const MAX_REDIRECTS = 3;
 const DNS_AND_CONNECT_TIMEOUT_MS = 5_000;
@@ -284,7 +284,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
-function checkPinnedSocket(socket: Socket, address: LookupAddress): void {
+/** Verify the connected peer still matches the public address chosen by DNS. */
+export function verifyPinnedSocket(socket: Socket, address: LookupAddress): void {
   const expected = normalizeIpAddress(address.address);
   const actual = socket.remoteAddress ? normalizeIpAddress(socket.remoteAddress) : null;
   if (!expected || !actual || expected !== actual || !isPublicIpAddress(socket.remoteAddress || '')) {
@@ -436,7 +437,7 @@ function requestOnce(validated: ValidatedRequest, pinned: LookupAddress): Promis
       request.once('socket', (socket) => {
         const verify = () => {
           try {
-            checkPinnedSocket(socket, pinned);
+            verifyPinnedSocket(socket, pinned);
             connected = true;
             if (connectTimer) clearTimeout(connectTimer);
           } catch (reason) {

@@ -7,15 +7,13 @@ import type {
   ImportFetchResponse,
   ImportFetchResult,
   SourceKey,
-} from '../src/models/importer';
+} from 'src/models/importer';
 import { validateImportFetchRequest } from './import-fetch';
 import type {
   ManagedProvider,
-  ProviderCredentialVault,
   UsableProviderCredential,
 } from './provider-credentials';
 
-const MAX_ATTEMPTS = 3;
 const MAX_ATTEMPTS_PER_PROVIDER = 3;
 const DEFAULT_COOLDOWN_MS = 60_000;
 const CIRCUIT_COOLDOWN_MS = 5 * 60_000;
@@ -58,8 +56,14 @@ interface KeyRuntime {
   failureStreak: number;
 }
 
+export interface ProviderCredentialStore {
+  usable(provider: ManagedProvider): Promise<UsableProviderCredential[]>;
+  recordCost(id: string, costMicros: number): Promise<void>;
+  disable(id: string): Promise<void>;
+}
+
 interface GatewayOptions {
-  credentials: ProviderCredentialVault;
+  credentials: ProviderCredentialStore;
   directFetch: (request: ImportFetchRequest) => Promise<ImportFetchResult>;
   drivers: ProviderDriver[];
   now?: (() => number) | undefined;

@@ -87,8 +87,8 @@ export default defineConfig((ctx: any) => {
       // viteVuePluginOptions: {},
 
       vitePlugins: [
-        // 动态 AI API 代理插件（必须在其他插件之前）
-        dynamicAIProxy(),
+        // Browser production traffic stays same-origin; the dynamic proxy is development-only.
+        ...(ctx.dev ? [dynamicAIProxy()] : []),
         [
           'unplugin-vue-components/vite',
           {

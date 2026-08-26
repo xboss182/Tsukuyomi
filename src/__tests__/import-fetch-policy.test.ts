@@ -8,7 +8,7 @@ import {
   resolvePublicAddress,
   toImportFetchError,
   validateImportFetchRequest,
-} from '../../src-electron/import-fetch';
+} from 'src/services/importer/import-fetch';
 import type { LookupAddress } from 'node:dns';
 import type { ImportFetchRequest } from 'src/models/importer';
 

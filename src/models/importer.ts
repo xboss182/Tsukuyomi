@@ -1,4 +1,5 @@
-import type { Novel } from './novel';
+import type { CoverHistoryItem, Novel } from './novel';
+import type { Memory } from './memory';
 
 export type SourceKey =
   | 'kakuyomu'
@@ -190,6 +191,19 @@ export interface ImportLibraryBackup {
   exportedAt: string;
   books: Novel[];
   chapterContents: ImportedChapterContent[];
+  jobs: ImportJob[];
+  jobItems: ImportJobItem[];
+}
+
+/** Safe desktop-to-web library migration; deliberately excludes settings and credentials. */
+export interface WebLibraryMigrationBackup {
+  version: 2;
+  kind: 'web-library-backup-v2';
+  exportedAt: string;
+  books: Novel[];
+  chapterContents: ImportedChapterContent[];
+  memories: Memory[];
+  coverHistory: CoverHistoryItem[];
   jobs: ImportJob[];
   jobItems: ImportJobItem[];
 }

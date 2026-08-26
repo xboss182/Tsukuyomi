@@ -9,14 +9,14 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
-import { performImportFetch } from './import-fetch';
-import { ProviderCredentialVault, type CredentialCrypto } from './provider-credentials';
+import { performImportFetch } from '../src/services/importer/import-fetch';
+import { ProviderCredentialVault, type CredentialCrypto } from '../src/services/importer/provider-credentials';
 import type { ImportFetchRequest, ImportFetchResult } from '../src/models/importer';
 import {
   PrivateScraperGateway,
   createProviderDrivers,
   performProviderHttpRequest,
-} from './provider-gateway';
+} from '../src/services/importer/provider-gateway';
 import { mainProcessDiagnostics, type MainProcessReadiness } from '../src/services/importer/import-diagnostics';
 import { ImportJobService } from '../src/services/importer/import-job-service';
 
