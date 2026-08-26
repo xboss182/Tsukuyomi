@@ -56,7 +56,7 @@ const WebBookService = {
     // WebLibraryApi.getChapterContent requires bookId+chapterId; the local
     // ChapterContentService uses chapterId only. In browser mode we store a
     // tiny chapterId→bookId map in a side index maintained by saveChapterContent.
-    const index = await getWebChapterIndex();
+    const index = getWebChapterIndex();
     const bookId = index.get(chapterId);
     if (!bookId) return undefined;
     const record = await WebLibraryApi.getChapterContent(bookId, chapterId);
@@ -69,11 +69,11 @@ const WebBookService = {
       paragraphs: content,
       expectedRevision: existing?.revision ?? 0,
     });
-    await updateWebChapterIndex(chapterId, bookId);
+    updateWebChapterIndex(chapterId, bookId);
   },
 
   async deleteChapterContent(chapterId: string): Promise<void> {
-    const index = await getWebChapterIndex();
+    const index = getWebChapterIndex();
     const bookId = index.get(chapterId);
     if (!bookId) return;
     // Backend does not support delete; overwrite with empty content.
@@ -82,7 +82,7 @@ const WebBookService = {
       expectedRevision: 0,
     });
     index.delete(chapterId);
-    await setWebChapterIndex(index);
+    setWebChapterIndex(index);
   },
 
   async bulkDeleteChapterContent(chapterIds: string[]): Promise<void> {
@@ -92,7 +92,7 @@ const WebBookService = {
 
 const WEB_CHAPTER_INDEX_KEY = 'tsukuyomi-web-chapter-index';
 
-async function getWebChapterIndex(): Promise<Map<string, string>> {
+function getWebChapterIndex(): Map<string, string> {
   if (typeof localStorage === 'undefined') return new Map();
   const raw = localStorage.getItem(WEB_CHAPTER_INDEX_KEY);
   if (!raw) return new Map();
@@ -104,13 +104,13 @@ async function getWebChapterIndex(): Promise<Map<string, string>> {
   }
 }
 
-async function updateWebChapterIndex(chapterId: string, bookId: string): Promise<void> {
-  const index = await getWebChapterIndex();
+function updateWebChapterIndex(chapterId: string, bookId: string): void {
+  const index = getWebChapterIndex();
   index.set(chapterId, bookId);
   localStorage.setItem(WEB_CHAPTER_INDEX_KEY, JSON.stringify([...index]));
 }
 
-async function setWebChapterIndex(index: Map<string, string>): Promise<void> {
+function setWebChapterIndex(index: Map<string, string>): void {
   localStorage.setItem(WEB_CHAPTER_INDEX_KEY, JSON.stringify([...index]));
 }
 

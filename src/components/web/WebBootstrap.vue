@@ -5,12 +5,13 @@ import WebLoginPage from './WebLoginPage.vue';
 
 const auth = injectWebAuth();
 
-const showLogin = computed(() => auth?.state.value === 'unauthenticated');
+const authState = computed(() => auth?.state.value ?? 'unknown');
 </script>
 
 <template>
   <div class="web-bootstrap">
-    <slot v-if="!showLogin" />
-    <WebLoginPage v-else />
+    <slot v-if="authState === 'authenticated'" />
+    <WebLoginPage v-else-if="authState === 'unauthenticated'" />
+    <span aria-live="polite">正在验证会话</span>
   </div>
 </template>

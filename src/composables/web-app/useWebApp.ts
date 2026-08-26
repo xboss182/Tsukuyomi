@@ -1,6 +1,6 @@
-import { ref, computed, watch, onMounted, onUnmounted, provide, inject, type InjectionKey, type Ref } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, provide, inject, type ComputedRef, type InjectionKey, type Ref } from 'vue';
 import { WebLibraryApi } from 'src/services/web-library-api';
-import type { ImportJob, ImportJobItem, CreateImportJobRequest, SourceKey } from 'src/models/importer';
+import type { CreateImportJobRequest, ImportJob, ImportJobItem, RemoteWorkSnapshot, SourceKey } from 'src/models/importer';
 import { SourceRegistry } from 'src/services/importer/source-registry';
 import type { BookRecord, Paginated } from 'src/services/web-library-api';
 import { connectImportJobSSE, type SseConnection } from 'src/services/web-sse-client';
@@ -193,18 +193,18 @@ export interface WebNovelImportContext {
   url: Ref<string>;
   step: Ref<WebNovelImportStep>;
   job: Ref<ImportJob | null>;
-  snapshot: Ref<import('src/models/importer').RemoteWorkSnapshot | null>;
+  snapshot: Ref<RemoteWorkSnapshot | null>;
   items: Ref<ImportJobItem[]>;
   error: Ref<{ code: string; message: string } | null>;
   privateUseAcknowledged: Ref<boolean>;
-  progress: Ref<{ completed: number; total: number; failed: number }>;
+  progress: ComputedRef<{ completed: number; total: number; failed: number }>;
   selectedChapters: Ref<Set<string>>;
-  canPreview: import('vue').ComputedRef<boolean>;
-  canImport: import('vue').ComputedRef<boolean>;
-  isBusy: import('vue').ComputedRef<boolean>;
-  detectedSource: import('vue').ComputedRef<{ sourceKey: string; label: string } | null>;
-  sourceLabel: import('vue').ComputedRef<string>;
-  needsPrivateUseAck: import('vue').ComputedRef<boolean>;
+  canPreview: ComputedRef<boolean>;
+  canImport: ComputedRef<boolean>;
+  isBusy: ComputedRef<boolean>;
+  detectedSource: ComputedRef<{ sourceKey: string; label: string } | null>;
+  sourceLabel: ComputedRef<string>;
+  needsPrivateUseAck: ComputedRef<boolean>;
   setUrl: (value: string) => void;
   acknowledgePrivateUse: () => void;
   preview: () => Promise<void>;
@@ -246,11 +246,11 @@ function stepFromJob(job: ImportJob | null): WebNovelImportStep {
   return job.status as WebNovelImportStep;
 }
 
-function createWebNovelImportContext(): WebNovelImportContext {
+export function createWebNovelImportContext(): WebNovelImportContext {
   const url = ref('');
   const step = ref<WebNovelImportStep>('idle');
   const job = ref<ImportJob | null>(null);
-  const snapshot = ref<ImportJob['snapshot'] | null>(null);
+  const snapshot = ref<RemoteWorkSnapshot | null>(null);
   const items = ref<ImportJobItem[]>([]);
   const error = ref<{ code: string; message: string } | null>(null);
   const privateUseAcknowledged = ref(false);
@@ -378,7 +378,6 @@ function createWebNovelImportContext(): WebNovelImportContext {
     error.value = null;
     snapshot.value = null;
     items.value = [];
-    selectedChapters.value.clear();
 
     try {
       const request: CreateImportJobRequest = {
@@ -386,7 +385,7 @@ function createWebNovelImportContext(): WebNovelImportContext {
         mode,
         idempotencyKey: crypto.randomUUID(),
         privateUseAcknowledged: needsPrivateUseAck.value ? privateUseAcknowledged.value : undefined,
-        selectedRemoteChapterIds: Array.from(selectedChapters.value),
+        selectedRemoteChapterIds: existingSelection,
       };
       const created = await WebLibraryApi.createImportJob(request);
       job.value = created;

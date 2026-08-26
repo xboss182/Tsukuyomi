@@ -6,14 +6,14 @@ const sessionResponse = { authenticated: true, expiresAt: '2026-08-24T12:00:00.0
 
 function mockFetch(responses: Map<string, { status: number; body?: unknown }>): () => void {
   const original = globalThis.fetch;
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
-    const url = typeof input === 'string' ? input : input.toString();
+  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const response = responses.get(url);
     if (!response) {
-      return new Response(JSON.stringify({ error: { code: 'not_found', message: 'not found', retryable: false } }), { status: 404 });
+      return Promise.resolve(new Response(JSON.stringify({ error: { code: 'not_found', message: 'not found', retryable: false } }), { status: 404 }));
     }
     const body = response.body !== undefined ? JSON.stringify(response.body) : '';
-    return new Response(body, { status: response.status });
+    return Promise.resolve(new Response(body, { status: response.status }));
   }) as unknown as typeof fetch;
   return () => {
     globalThis.fetch = original;
@@ -80,10 +80,10 @@ function mockFetchWithInit(
   handler: (init: RequestInit | undefined) => { status: number; body?: unknown },
 ): () => void {
   const original = globalThis.fetch;
-  globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
     const response = handler(init);
     const body = response.body !== undefined ? JSON.stringify(response.body) : '';
-    return new Response(body, { status: response.status });
+    return Promise.resolve(new Response(body, { status: response.status }));
   }) as unknown as typeof fetch;
   return () => {
     globalThis.fetch = original;

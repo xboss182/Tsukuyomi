@@ -2,19 +2,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { provideWebAuth, injectWebAuth } from 'src/composables/web-app/useWebApp';
+import type { ImportJob } from 'src/models/importer';
+import { createWebNovelImportContext, provideWebAuth, injectWebAuth } from 'src/composables/web-app/useWebApp';
+import WebBootstrap from 'src/components/web/WebBootstrap.vue';
+import { WebLibraryApi } from 'src/services/web-library-api';
 import { setWebClientSessionExpiredHandler } from 'src/services/web-client';
 
 function mockFetch(responses: Map<string, { status: number; body?: unknown }>): () => void {
   const original = globalThis.fetch;
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
-    const url = typeof input === 'string' ? input : input.toString();
+  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const response = responses.get(url);
     if (!response) {
-      return new Response(JSON.stringify({ error: { code: 'not_found', message: 'not found', retryable: false } }), { status: 404 });
+      return Promise.resolve(new Response(JSON.stringify({ error: { code: 'not_found', message: 'not found', retryable: false } }), { status: 404 }));
     }
     const body = response.body !== undefined ? JSON.stringify(response.body) : '';
-    return new Response(body, { status: response.status });
+    return Promise.resolve(new Response(body, { status: response.status }));
   }) as unknown as typeof fetch;
   return () => {
     globalThis.fetch = original;
@@ -107,5 +110,39 @@ describe('useWebApp auth', () => {
     });
     mount(Host);
     expect(injected).not.toBeNull();
+  });
+
+  it('does not render application content while session state is unknown', () => {
+    const Host = defineComponent({
+      setup() {
+        provideWebAuth();
+        return () => h(WebBootstrap, null, { default: () => h('span', 'private library') });
+      },
+    });
+    const wrapper = mount(Host, { global: { stubs: { WebLoginPage: true } } });
+    expect(wrapper.text()).toContain('正在验证会话');
+    expect(wrapper.text()).not.toContain('private library');
+    wrapper.unmount();
+  });
+});
+
+describe('useWebApp import', () => {
+  it('sends the selected chapter subset when importing a preview', async () => {
+    const createImportJob = vi.spyOn(WebLibraryApi, 'createImportJob').mockResolvedValue({ id: 'job-1', status: 'queued' } as ImportJob);
+    const context = createWebNovelImportContext();
+    context.setUrl('https://kakuyomu.jp/works/12345678901234567890');
+    context.snapshot.value = {
+      source: { sourceKey: 'kakuyomu', remoteWorkId: '12345678901234567890', canonicalWorkUrl: 'https://kakuyomu.jp/works/12345678901234567890' },
+      title: 'Test',
+      volumes: [],
+      chapters: [],
+      metadataOnly: false,
+    };
+    context.selectedChapters.value = new Set(['chapter-2']);
+
+    await context.confirmImport();
+
+    expect(createImportJob).toHaveBeenCalledWith(expect.objectContaining({ selectedRemoteChapterIds: ['chapter-2'] }));
+    createImportJob.mockRestore();
   });
 });
