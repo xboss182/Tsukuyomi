@@ -10,14 +10,14 @@ import type {
 import {
   ProviderCredentialVault,
   type CredentialCrypto,
-} from '../../src-electron/provider-credentials';
+} from 'src/services/importer/provider-credentials';
 import {
   PrivateScraperGateway,
   createProviderDrivers,
   type ProviderDriver,
   type ProviderHttpRequest,
   type ProviderHttpResponse,
-} from '../../src-electron/provider-gateway';
+} from 'src/services/importer/provider-gateway';
 
 const temporaryDirectories: string[] = [];
 const crypto: CredentialCrypto = {

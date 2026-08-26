@@ -126,4 +126,72 @@ describe('ImportLibraryBackupService', () => {
 
     expect((await ChapterContentService.loadChapterContent('chapter-1'))?.[0]?.text).toBe('新正文');
   });
+
+  it('round-trips the safe desktop web-migration backup without settings secrets', async () => {
+    const db = await getDB();
+    await db.put(
+      'books',
+      {
+        ...book,
+        volumes: [
+          {
+            id: 'volume-1',
+            title: '正文',
+            chapters: [
+              {
+                id: 'chapter-1',
+                title: '第一章',
+                createdAt: new Date('2026-08-24T00:00:00.000Z'),
+                lastEdited: new Date('2026-08-24T00:00:00.000Z'),
+              },
+            ],
+          },
+        ],
+        defaultAIModel: {
+          translation: { authorizationHeader: 'fixture-authorization-header' },
+        },
+      } as unknown as Novel,
+    );
+    await db.put('chapter-contents', {
+      chapterId: 'chapter-1',
+      content: '[{"id":"p1","text":"正文","selectedTranslationId":"","translations":[]}]',
+      lastModified: '2026-08-24T00:00:00.000Z',
+    });
+    await db.put('memories', {
+      id: 'memory-1',
+      bookId: book.id,
+      content: 'Memory content',
+      summary: 'Memory summary',
+      createdAt: 1,
+      lastAccessedAt: 2,
+    });
+    await db.put('cover-history', {
+      id: 'cover-1',
+      url: 'https://example.test/cover.jpg',
+      addedAt: new Date('2026-08-24T00:00:00.000Z'),
+    });
+
+    const backup = await ImportLibraryBackupService.createWebMigrationBackup();
+    const exported = JSON.parse(JSON.stringify(backup)) as {
+      books: Array<{ createdAt?: unknown }>;
+      coverHistory: Array<{ addedAt?: unknown }>;
+    };
+    expect(backup).toMatchObject({ version: 2, kind: 'web-library-backup-v2' });
+    expect(JSON.stringify(backup)).not.toContain('apiKey');
+    expect(JSON.stringify(backup)).not.toContain('fixture-authorization-header');
+    expect(exported.books[0]?.createdAt).toBe('2026-08-24T00:00:00.000Z');
+    expect(exported.coverHistory[0]?.addedAt).toBe('2026-08-24T00:00:00.000Z');
+    expect(backup.memories).toHaveLength(1);
+    expect(backup.coverHistory).toHaveLength(1);
+
+    await db.clear('books');
+    await db.clear('chapter-contents');
+    await db.clear('memories');
+    await db.clear('cover-history');
+    await ImportLibraryBackupService.restoreWebMigrationBackup(exported);
+
+    expect((await db.get('books', book.id))?.createdAt).toBeInstanceOf(Date);
+    expect(await db.get('memories', 'memory-1')).toMatchObject({ content: 'Memory content' });
+    expect(await db.get('cover-history', 'cover-1')).toMatchObject({ url: 'https://example.test/cover.jpg' });
+  });
 });

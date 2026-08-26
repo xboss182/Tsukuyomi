@@ -232,12 +232,17 @@ bun run dev
 | `bun run dev:electron` | Start Electron dev mode |
 | `bun run build:spa` | Build production Web SPA |
 | `bun run build:electron` | Package cross-platform desktop client (dmg/exe/deb) |
+| `bun run start` | Start the private Bun web server (loopback only) |
+| `bun run migrate` | Apply transactional SQLite migrations |
+| `bun run backup` | Create a verified SQLite snapshot (`TSUKUYOMI_BACKUP_PATH`) |
+| `bun run admin:set-password` | TTY-only first password bootstrap |
+| `bun run admin:reset-password` | TTY-only emergency password reset; revokes sessions |
 | `bun run lint` | Run ESLint |
 | `bun run type-check` | TypeScript type check |
 | `bun test` | Run test suite |
 | `bun run bump` | Bump version number |
 
-**Developer docs**: [Build Troubleshooting](docs/BUILD_TROUBLESHOOTING.md) \| [Theme Guide](docs/THEME_GUIDE.md) \| [Translation Guide](docs/TRANSLATION_GUIDE.md) \| [Wiki Sync](docs/WIKI_SYNC.md) \| [Scraper Guide](docs/SCRAPER.md) \| [Contributor Guide](AGENTS.md) \| [Project Conventions (Claude Code)](CLAUDE.md)
+**Developer docs**: [Build Troubleshooting](docs/BUILD_TROUBLESHOOTING.md) \| [Private Web Deployment](docs/WEB_DEPLOYMENT.md) \| [Theme Guide](docs/THEME_GUIDE.md) \| [Translation Guide](docs/TRANSLATION_GUIDE.md) \| [Wiki Sync](docs/WIKI_SYNC.md) \| [Scraper Guide](docs/SCRAPER.md) \| [Contributor Guide](AGENTS.md) \| [Project Conventions (Claude Code)](CLAUDE.md)
 
 ## 🤝 Contributing
 

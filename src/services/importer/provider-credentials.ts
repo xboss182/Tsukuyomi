@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { ImportFetchProvider } from '../src/models/importer';
+import type { ImportFetchProvider } from 'src/models/importer';
 
 export type ManagedProvider = Exclude<ImportFetchProvider, 'direct'>;
 
@@ -41,6 +41,67 @@ export interface UsableProviderCredential extends ProviderCredentialSummary {
   secret: string;
 }
 
+const PROVIDERS: ReadonlySet<ManagedProvider> = new Set([
+  'scrape-do',
+  'scrapingant',
+  'zenrows',
+  'zyte',
+]);
+
+export function currentPeriod(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+export function nonNegativeInteger(value: number | undefined, fallback: number): number {
+  return Number.isSafeInteger(value) && (value ?? -1) >= 0 ? (value as number) : fallback;
+}
+
+export function isManagedProvider(value: unknown): value is ManagedProvider {
+  return PROVIDERS.has(value as ManagedProvider);
+}
+
+/** Shared trust-boundary validation for provider credential inputs. */
+export function validateProviderCredentialInput(input: ProviderCredentialInput): void {
+  if (!PROVIDERS.has(input.provider)) throw new Error('不支持的抓取服务商');
+  if (!input.label.trim() || !input.secret.trim()) throw new Error('服务商凭据不能为空');
+  if (!input.authorizedForUse) throw new Error('必须确认该凭据已获授权使用');
+  if (!Number.isSafeInteger(input.maxConcurrency) || input.maxConcurrency < 1) {
+    throw new Error('凭据并发限制无效');
+  }
+  if (input.paidEnabled && !input.paidPlan) throw new Error('免费凭据不能启用付费调用');
+}
+
+/** Compute the non-secret summary fields shared by every storage backend. */
+export function providerCredentialFields(
+  input: ProviderCredentialInput,
+  existing: Pick<ProviderCredentialSummary, 'monthlyCostMicrosUsed' | 'costPeriod'> | undefined,
+): Omit<ProviderCredentialSummary, 'id'> {
+  return {
+    provider: input.provider,
+    label: input.label.trim(),
+    enabled: input.enabled !== false,
+    maxConcurrency: input.maxConcurrency,
+    paidPlan: input.paidPlan === true,
+    paidEnabled: input.paidPlan === true && input.paidEnabled === true,
+    monthlyCostLimitMicros: nonNegativeInteger(input.monthlyCostLimitMicros, 0),
+    monthlyCostMicrosUsed: existing?.monthlyCostMicrosUsed ?? 0,
+    costPeriod: existing?.costPeriod ?? currentPeriod(),
+  };
+}
+
+/** Filter deciding whether a stored credential may serve paid scraping right now. */
+export function isUsableCredential(
+  credential: Pick<ProviderCredentialSummary, 'provider' | 'enabled' | 'paidPlan' | 'paidEnabled' | 'monthlyCostMicrosUsed' | 'monthlyCostLimitMicros'>,
+  provider: ManagedProvider,
+): boolean {
+  return (
+    credential.provider === provider &&
+    credential.enabled &&
+    (!credential.paidPlan || credential.paidEnabled) &&
+    (!credential.paidPlan || credential.monthlyCostMicrosUsed < credential.monthlyCostLimitMicros)
+  );
+}
+
 interface StoredCredential extends ProviderCredentialSummary {
   authorizedForUse: true;
   encryptedSecret: string;
@@ -49,31 +110,6 @@ interface StoredCredential extends ProviderCredentialSummary {
 interface CredentialFile {
   version: 1;
   credentials: StoredCredential[];
-}
-
-const PROVIDERS: ReadonlySet<ManagedProvider> = new Set([
-  'scrape-do',
-  'scrapingant',
-  'zenrows',
-  'zyte',
-]);
-
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function nonNegativeInteger(value: number | undefined, fallback: number): number {
-  return Number.isSafeInteger(value) && (value ?? -1) >= 0 ? (value as number) : fallback;
-}
-
-function validateInput(input: ProviderCredentialInput): void {
-  if (!PROVIDERS.has(input.provider)) throw new Error('不支持的抓取服务商');
-  if (!input.label.trim() || !input.secret.trim()) throw new Error('服务商凭据不能为空');
-  if (!input.authorizedForUse) throw new Error('必须确认该凭据已获授权使用');
-  if (!Number.isSafeInteger(input.maxConcurrency) || input.maxConcurrency < 1) {
-    throw new Error('凭据并发限制无效');
-  }
-  if (input.paidEnabled && !input.paidPlan) throw new Error('免费凭据不能启用付费调用');
 }
 
 export class ProviderCredentialVault {
@@ -137,7 +173,7 @@ export class ProviderCredentialVault {
   }
 
   async upsert(input: ProviderCredentialInput): Promise<ProviderCredentialSummary> {
-    validateInput(input);
+    validateProviderCredentialInput(input);
     await this.load();
     const existing = input.id
       ? this.credentials.find((credential) => credential.id === input.id)
@@ -145,15 +181,7 @@ export class ProviderCredentialVault {
     if (input.id && !existing) throw new Error('服务商凭据不存在');
     const credential: StoredCredential = {
       id: existing?.id ?? randomUUID(),
-      provider: input.provider,
-      label: input.label.trim(),
-      enabled: input.enabled !== false,
-      maxConcurrency: input.maxConcurrency,
-      paidPlan: input.paidPlan === true,
-      paidEnabled: input.paidPlan === true && input.paidEnabled === true,
-      monthlyCostLimitMicros: nonNegativeInteger(input.monthlyCostLimitMicros, 0),
-      monthlyCostMicrosUsed: existing?.monthlyCostMicrosUsed ?? 0,
-      costPeriod: existing?.costPeriod ?? currentPeriod(),
+      ...providerCredentialFields(input, existing),
       authorizedForUse: true,
       encryptedSecret: this.crypto.encrypt(input.secret.trim()).toString('base64'),
     };
@@ -183,14 +211,7 @@ export class ProviderCredentialVault {
   async usable(provider: ManagedProvider): Promise<UsableProviderCredential[]> {
     await this.load();
     return this.credentials
-      .filter(
-        (credential) =>
-          credential.provider === provider &&
-          credential.enabled &&
-          (!credential.paidPlan || credential.paidEnabled) &&
-          (!credential.paidPlan ||
-            credential.monthlyCostMicrosUsed < credential.monthlyCostLimitMicros),
-      )
+      .filter((credential) => isUsableCredential(credential, provider))
       .map((credential) => ({
         ...this.summary(credential),
         secret: this.crypto.decrypt(Buffer.from(credential.encryptedSecret, 'base64')),

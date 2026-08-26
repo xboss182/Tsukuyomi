@@ -92,6 +92,42 @@ function itemId(job: ImportJob, chapter: RemoteChapterStub): string {
   return `${job.id}:${chapter.remoteChapterId}`;
 }
 
+/** Build the durable per-chapter work item shared by the desktop and web importers. */
+export function createQueuedImportItem(job: ImportJob, chapter: RemoteChapterStub, timestamp: string): ImportJobItem {
+  return {
+    id: itemId(job, chapter),
+    jobId: job.id,
+    sourceKey: chapter.sourceKey,
+    remoteWorkId: chapter.remoteWorkId,
+    remoteChapterId: chapter.remoteChapterId,
+    jobStatusKey: `${job.id}:queued`,
+    sourceChapterKey: SourceRegistry.sourceChapterKey(chapter),
+    canonicalChapterUrl: chapter.canonicalChapterUrl,
+    title: chapter.title,
+    remoteVolumeId: chapter.volume.remoteVolumeId,
+    remoteVolumeTitle: chapter.volume.title,
+    sequence: chapter.sequence,
+    ...(chapter.remoteUpdatedAt ? { remoteUpdatedAt: chapter.remoteUpdatedAt } : {}),
+    status: 'queued',
+    attempts: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+/** Build the TOC/metadata discovery request shared by the desktop and web importers. */
+export function discoveryFetchRequest(job: ImportJob, source: SourceIdentity): ImportFetchRequest {
+  const adapter = SourceRegistry.get(source.sourceKey);
+  return {
+    sourceKey: source.sourceKey,
+    kind: adapter.key === 'narou-metadata' ? 'metadata' : 'toc',
+    url: SourceRegistry.getFetchUrl(source),
+    jobId: job.id,
+    maxProviderCostMicros: job.maxProviderCostMicros,
+    providerCostMicrosUsed: job.providerCostMicrosUsed,
+  };
+}
+
 function getSourceWorkKey(source: SourceIdentity): string {
   return SourceRegistry.sourceWorkKey(source);
 }
@@ -131,7 +167,8 @@ function getSourceVolume(book: Novel, chapter: RemoteChapterStub): Volume | unde
   );
 }
 
-function sourceWorkMetadata(snapshot: RemoteWorkSnapshot, checkedAt: string): SourceWorkMetadata {
+/** Merge remote work metadata onto the durable source record shared by both importers. */
+export function sourceWorkMetadata(snapshot: RemoteWorkSnapshot, checkedAt: string): SourceWorkMetadata {
   return {
     ...snapshot.source,
     lastCheckedAt: checkedAt,
@@ -634,16 +671,9 @@ export class ImportJobService {
         remoteWorkId: initial.remoteWorkId,
         canonicalWorkUrl: initial.canonicalWorkUrl,
       };
-      const adapter = SourceRegistry.get(source.sourceKey);
       await this.updateJob(initial.id, { status: 'discovering' });
-      const discovery = await fetchWithRetries({
-        sourceKey: source.sourceKey,
-        kind: adapter.key === 'narou-metadata' ? 'metadata' : 'toc',
-        url: SourceRegistry.getFetchUrl(source),
-        jobId: initial.id,
-        maxProviderCostMicros: initial.maxProviderCostMicros,
-        providerCostMicrosUsed: initial.providerCostMicrosUsed,
-      });
+      const adapter = SourceRegistry.get(source.sourceKey);
+      const discovery = await fetchWithRetries(discoveryFetchRequest(initial, source));
       if (!discovery.ok) throw new StructuredImportError(discovery.error);
 
       const snapshot = adapter.discover(source, discovery.response.body, now());
@@ -728,25 +758,7 @@ export class ImportJobService {
       ? snapshot.chapters.filter((chapter) => selected.has(chapter.remoteChapterId))
       : snapshot.chapters;
     const timestamp = now();
-    const items = chapters.map<ImportJobItem>((chapter) => ({
-      id: itemId(job, chapter),
-      jobId: job.id,
-      sourceKey: chapter.sourceKey,
-      remoteWorkId: chapter.remoteWorkId,
-      remoteChapterId: chapter.remoteChapterId,
-      jobStatusKey: `${job.id}:queued`,
-      sourceChapterKey: SourceRegistry.sourceChapterKey(chapter),
-      canonicalChapterUrl: chapter.canonicalChapterUrl,
-      title: chapter.title,
-      remoteVolumeId: chapter.volume.remoteVolumeId,
-      remoteVolumeTitle: chapter.volume.title,
-      sequence: chapter.sequence,
-      ...(chapter.remoteUpdatedAt ? { remoteUpdatedAt: chapter.remoteUpdatedAt } : {}),
-      status: 'queued',
-      attempts: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }));
+    const items = chapters.map<ImportJobItem>((chapter) => createQueuedImportItem(job, chapter, timestamp));
 
     const db = await getDB();
     const tx = db.transaction(['import-jobs', 'import-job-items'], 'readwrite');

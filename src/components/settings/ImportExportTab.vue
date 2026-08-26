@@ -65,6 +65,29 @@ const exportSettings = async () => {
   }
 };
 
+const exportWebLibrary = async () => {
+  try {
+    const backup = await ImportLibraryBackupService.createWebMigrationBackup();
+    SettingsService.downloadJson(
+      backup,
+      `tsukuyomi-web-library-${new Date().toISOString().split('T')[0]}.json`,
+    );
+    toast.add({
+      severity: 'success',
+      summary: '导出成功',
+      detail: '已导出不含密钥和设置的 Web 书库迁移文件',
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '导出失败',
+      detail: error instanceof Error ? error.message : '导出 Web 书库时发生未知错误',
+      life: 5000,
+    });
+  }
+};
+
 // 覆盖语义下重写封面历史：先清空再逐条写入
 const applyCoverHistory = async (covers: ImportedSettings['coverHistory']) => {
   await coverHistoryStore.clearHistory();
@@ -141,6 +164,32 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     });
   }
 });
+
+const {
+  fileInputRef: webLibraryFileInputRef,
+  triggerFilePicker: importWebLibrary,
+  createFileSelectHandler: createWebLibraryFileSelectHandler,
+} = useFilePicker();
+
+const handleWebLibraryFileSelect = createWebLibraryFileSelectHandler(async (file) => {
+  try {
+    await ImportLibraryBackupService.restoreWebMigrationBackup(await SettingsService.readJsonFile(file));
+    await booksStore.refreshBooks();
+    toast.add({
+      severity: 'success',
+      summary: '导入成功',
+      detail: '已替换为 Web 书库迁移文件中的内容',
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '导入失败',
+      detail: error instanceof Error ? error.message : '导入 Web 书库时发生未知错误',
+      life: 5000,
+    });
+  }
+});
 </script>
 
 <template>
@@ -181,6 +230,31 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       </div>
     </div>
 
+    <div class="p-4 rounded-lg border border-white/10 bg-white/5">
+      <div class="space-y-3">
+        <div>
+          <h3 class="text-sm font-medium text-moon/90 mb-1">Web 书库迁移</h3>
+          <p class="text-xs text-moon/70">
+            仅导入或导出书籍、章节、Memory、封面历史和导入任务；不会包含 API 密钥、同步密钥或应用设置。导入会替换当前书库。
+          </p>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <Button
+            label="导入 Web 书库"
+            icon="pi pi-upload"
+            class="p-button-primary w-full"
+            @click="importWebLibrary"
+          />
+          <Button
+            label="导出 Web 书库"
+            icon="pi pi-download"
+            class="p-button-outlined w-full"
+            @click="exportWebLibrary"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- 隐藏的文件输入 -->
     <input
       ref="fileInputRef"
@@ -188,6 +262,13 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       accept=".json,.txt"
       class="hidden"
       @change="handleFileSelect"
+    />
+    <input
+      ref="webLibraryFileInputRef"
+      type="file"
+      accept=".json"
+      class="hidden"
+      @change="handleWebLibraryFileSelect"
     />
   </div>
 </template>

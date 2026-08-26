@@ -50,3 +50,12 @@ yarn-error.log*
 # TypeScript incremental build info
 tsconfig.tsbuildinfo
 coverage/
+
+# Private Bun web-runtime state and offline recovery artifacts
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.backup.sqlite3
