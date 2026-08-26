@@ -83,6 +83,12 @@ Large imports (100+ chapters) will take several minutes. The import panel shows 
 
 For sites that serve bot-detection challenges, the desktop app is more reliable.
 
+## Scraping Providers (API Keys)
+
+Some sites require routing requests through a third-party scraping provider to bypass bot-detection. FreeWebNovel always uses this path; NoBadNovel and NovelLunar fall back to it when a direct request is blocked.
+
+See **[docs/PROVIDERS.md](PROVIDERS.md)** for the full guide: supported providers (Scrape.do, ScrapingAnt, ZenRows, Zyte), how to add API keys in Settings, cost tracking, and troubleshooting.
+
 ## Troubleshooting
 
 **"Unsupported source" error**
