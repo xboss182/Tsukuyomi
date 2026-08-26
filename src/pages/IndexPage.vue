@@ -9,12 +9,14 @@ import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import NovelImportDialog from 'src/components/dialogs/NovelImportDialog.vue';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
+import { provideAdaptiveNovelImport } from 'src/composables/useAdaptiveNovelImport';
 import { provideIndexPage } from 'src/composables/index-page/useIndexPage';
 import IndexPageDesktop from './index-page/IndexPageDesktop.vue';
 import IndexPageTablet from './index-page/IndexPageTablet.vue';
 import IndexPageMobile from './index-page/IndexPageMobile.vue';
 
 const ctx = provideIndexPage();
+provideAdaptiveNovelImport();
 const showNovelImportDialog = ctx.showNovelImportDialog;
 const { variant } = useDeviceVariant();
 

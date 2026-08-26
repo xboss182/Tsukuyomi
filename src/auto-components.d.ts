@@ -121,6 +121,11 @@ declare module 'vue' {
     MobileTabBar: typeof import('./components/layout/MobileTabBar.vue')['default']
     NotificationBadge: typeof import('./components/layout/NotificationBadge.vue')['default']
     NovelImportDialog: typeof import('./components/dialogs/NovelImportDialog.vue')['default']
+    NovelImportDialogBody: typeof import('./components/dialogs/NovelImportDialogBody.vue')['default']
+    NovelImportPreview: typeof import('./components/dialogs/NovelImportPreview.vue')['default']
+    NovelImportProgress: typeof import('./components/dialogs/NovelImportProgress.vue')['default']
+    NovelImportResult: typeof import('./components/dialogs/NovelImportResult.vue')['default']
+    NovelImportUrlInput: typeof import('./components/dialogs/NovelImportUrlInput.vue')['default']
     NovelScraperDialog: typeof import('./components/dialogs/NovelScraperDialog.vue')['default']
     ParagraphCard: typeof import('./components/novel/ParagraphCard.vue')['default']
     ParagraphCharacterPopoverList: typeof import('./components/novel/ParagraphCharacterPopoverList.vue')['default']
@@ -198,5 +203,8 @@ declare module 'vue' {
     TranslationProgressTablet: typeof import('./components/novel/TranslationProgressTablet.vue')['default']
     VolumesList: typeof import('./components/novel/VolumesList.vue')['default']
     VolumesListTablet: typeof import('./components/novel/VolumesListTablet.vue')['default']
+    WebBootstrap: typeof import('./components/web/WebBootstrap.vue')['default']
+    WebHeaderActions: typeof import('./components/layout/WebHeaderActions.vue')['default']
+    WebLoginPage: typeof import('./components/web/WebLoginPage.vue')['default']
   }
 }

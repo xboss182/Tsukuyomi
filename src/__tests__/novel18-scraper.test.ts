@@ -73,12 +73,13 @@ describe('Novel18SyosetuScraper', () => {
 
   it('skips external CORS proxy only in Electron', () => {
     const win = window as unknown as { electronAPI?: { isElectron?: boolean } };
-    expect(scraper.exposeShouldSkipExternalProxy()).toBe(false);
-    win.electronAPI = { isElectron: true };
+    win.electronAPI = { isElectron: false };
     try {
+      expect(scraper.exposeShouldSkipExternalProxy()).toBe(false);
+      win.electronAPI = { isElectron: true };
       expect(scraper.exposeShouldSkipExternalProxy()).toBe(true);
     } finally {
-      delete win.electronAPI;
+      win.electronAPI = { isElectron: true };
     }
   });
 

@@ -1,5 +1,6 @@
 import { watch } from 'vue';
 import { useSettingsStore } from 'src/stores/settings';
+import { isElectron } from 'src/utils/platform';
 import { useSyncExecutor } from 'src/composables/useSyncExecutor';
 
 // 单例状态（在模块级别共享）

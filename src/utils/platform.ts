@@ -55,5 +55,9 @@ export function isMobileDevice(): boolean {
  * 用 `useElectron()` 包一层即可。
  */
 export function isElectron(): boolean {
-  return typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
+  if (typeof window !== 'undefined') {
+    return window.electronAPI?.isElectron === true;
+  }
+  if (typeof process !== 'undefined' && process.env?.ELECTRON_MODE === 'true') return true;
+  return false;
 }
